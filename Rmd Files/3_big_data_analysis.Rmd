@@ -1,0 +1,1275 @@
+---
+title: "Handling Large Datasets in R"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+# Set global options for the document
+knitr::opts_chunk$set(
+  echo = TRUE,           # Show code in output
+  warning = FALSE,       # Hide warnings
+  message = FALSE,       # Hide messages
+  fig.width = 10,        # Figure width
+  fig.height = 6,        # Figure height
+  cache = FALSE          # Disable caching for training purposes
+)
+
+# Load required libraries
+library(data.table)      # For fast data manipulation
+library(dplyr)           # For intuitive data wrangling
+library(ggplot2)         # For creating graphs
+library(microbenchmark)  # For performance comparison
+library(pryr)            # For memory measurement
+library(DT)              # For interactive tables
+library(kableExtra)      # For nice tables
+library(readr)           # For chunked reading
+library(tibble)
+
+# Set display options
+options(dplyr.print_max = 20, 
+        dplyr.print_min = 5,
+        digits = 4,
+        scipen = 999)
+```
+
+# Introduction to Handling Large Datasets in R
+
+## Welcome to the Big Data Analysis and Management Training Program
+
+Welcome to the second section of our comprehensive training program! This section focuses on **handling large datasets in R**. In today's data‑driven world, working with large datasets is a common requirement for analysts, researchers, and data scientists. This manual guides you through practical techniques to handle datasets that don’t fit comfortably in memory or require efficient processing.
+
+**Learning goals**
+- Understand and manage memory constraints when working with large datasets
+- Use **data.table** for high‑speed, memory‑efficient data manipulation
+- Apply memory‑aware techniques using **dplyr**/**tidyverse**
+- Implement **chunk processing** for extremely large files
+- Benchmark and compare approaches for speed and memory
+- Apply **best practices** for big‑data handling in R
+
+> **Tip for knitting**: Some operations (e.g., writing multi‑GB CSVs) can be time‑consuming. Where appropriate, heavy chunks are set to `eval=FALSE` with clear instructions—run interactively when needed.
+
+---
+
+# 1. Creating and Understanding Large Datasets
+
+**What you’ll do**: Create a realistic 1‑million‑row dataset and explore its structure and memory footprint.
+
+## 1.1 Creating a Large Sample Dataset
+
+The training dataset simulates customer/employee‑like records:
+1) **ID** – unique identifier  
+2) **Age** – 18–65 years  
+3) **Income** – annual income (normal distribution)  
+4) **Education** – High School / Bachelor / Master / PhD  
+5) **Score** – performance score (50–100)
+
+```{r create-large-data}
+set.seed(123)
+
+# Define dataset size
+n <- 1000000  # 1 million rows
+
+# Create the dataset
+large_data <- data.frame(
+  ID = 1:n,
+  Age = sample(18:65, n, replace = TRUE),
+  Income = round(rnorm(n, mean = 50000, sd = 15000), 0),
+  Education = sample(c("High School", "Bachelor", "Master", "PhD"), 
+                     n, replace = TRUE, prob = c(0.3, 0.4, 0.2, 0.1)),
+  Score = round(runif(n, min = 50, max = 100), 1)
+)
+
+# Quick confirmation
+list(rows = nrow(large_data), cols = ncol(large_data), columns = names(large_data))
+```
+
+## 1.2 Understanding Dataset Structure
+
+**Instructions**: Inspect dimensions, column names, head/tail, and types. Use `str()` for an at‑a‑glance structure.
+
+```{r inspect-structure}
+info <- list(
+  Dimensions = dim(large_data),
+  Column_Names = names(large_data)
+)
+info
+
+head(large_data, 5)
+
+tail(large_data, 5)
+
+str(large_data, vec.len = 2)
+```
+
+## 1.3 Memory Usage Analysis
+
+**Why this matters**: Many operations temporarily need **2–3×** the original dataset size in memory (copying, sorting, joins). Plan capacity before running heavy transformations.
+
+```{r memory-usage}
+# Object size calculations
+size_total_MB <- as.numeric(object.size(large_data)) / 1024^2
+size_per_row_B <- as.numeric(object.size(large_data)) / nrow(large_data)
+size_per_col_row_B <- as.numeric(object.size(large_data)) / (nrow(large_data) * ncol(large_data))
+
+mem_tbl <- tibble(
+  Metric = c("Total size (MB)", "Size per row (B)", "Size per col per row (B)"),
+  Value  = c(round(size_total_MB, 2), round(size_per_row_B, 2), round(size_per_col_row_B, 4))
+)
+knitr::kable(mem_tbl, caption = "Memory footprint of the dataset")
+
+# Rule-of-thumb estimate: operations may need ~2.5x size
+estimated_ops_memory_MB <- size_total_MB * 2.5
+estimated_ops_memory_MB
+```
+
+> **Note**: Fine‑grained system memory reporting differs by OS. On macOS/Linux, use tools like **top**, **htop**, or Activity Monitor to watch overall memory usage while running R.
+
+## 1.4 Basic Data Exploration
+
+**Learn**: Compute summary stats; check distributions and missing values.
+
+```{r basic-eda}
+# Summary statistics for numeric columns
+summary_stats <- data.frame(
+  Variable = c("Age", "Income", "Score"),
+  Min = c(min(large_data$Age), min(large_data$Income), min(large_data$Score)),
+  Max = c(max(large_data$Age), max(large_data$Income), max(large_data$Score)),
+  Mean = c(mean(large_data$Age), mean(large_data$Income), mean(large_data$Score)),
+  Median = c(median(large_data$Age), median(large_data$Income), median(large_data$Score)),
+  SD = c(sd(large_data$Age), sd(large_data$Income), sd(large_data$Score))
+)
+knitr::kable(summary_stats, caption = "Summary statistics of numeric variables")
+
+# Education level distribution
+edu_dist <- table(large_data$Education)
+edu_percent <- prop.table(edu_dist) * 100
+edu_df <- data.frame(Education = names(edu_dist), Count = as.numeric(edu_dist),
+                     Percentage = round(as.numeric(edu_percent), 2))
+knitr::kable(edu_df, caption = "Education distribution")
+
+# Missing values check
+missing_counts <- colSums(is.na(large_data))
+if (sum(missing_counts) > 0) {
+  missing_df <- data.frame(
+    Column = names(missing_counts),
+    Missing_Count = as.numeric(missing_counts),
+    Percentage = round(100 * as.numeric(missing_counts) / nrow(large_data), 2)
+  )
+  knitr::kable(missing_df, caption = "Missing values by column")
+} else {
+  "No missing values in the dataset."
+}
+```
+
+---
+
+# 2. Memory Management Techniques
+
+**Goal**: Learn to **monitor**, **minimize**, and **plan** memory usage during analysis.
+
+## 2.1 Monitoring Memory Usage
+
+```{r monitor-memory}
+# Current memory used by all objects (pryr)
+current_mem <- mem_used()
+size_large <- object.size(large_data)
+mem_table <- tibble(
+  Item = c("All objects (approx)", "'large_data' object"),
+  Size_MB = c(round(as.numeric(current_mem)/1024^2, 2),
+              round(as.numeric(size_large)/1024^2, 2))
+)
+knitr::kable(mem_table, caption = "Memory usage snapshot (approx)")
+
+# Memory change example: create & remove a temporary object
+mem_before <- mem_used()
+temp_object <- data.frame(x = 1:1e6, y = rnorm(1e6))
+mem_during <- mem_used()
+rm(temp_object); gc()
+mem_after <- mem_used()
+
+mem_delta_tbl <- tibble(
+  Stage = c("Before", "During (with temp)", "After cleanup"),
+  MB = round(as.numeric(c(mem_before, mem_during, mem_after))/1024^2, 2)
+)
+knitr::kable(mem_delta_tbl, caption = "Memory changes across an operation")
+```
+
+## 2.2 Efficient Memory Practices
+
+**Best practices**
+1) **Clean up** unused objects with `rm()` and then `gc()`  
+2) Use **memory‑efficient types** (e.g., integers/factors where appropriate)  
+3) **Process in chunks** for very large files; persist intermediate results  
+4) Consider **databases** or **columnar formats** for out‑of‑memory computation
+
+```{r memory-practices}
+# Demonstration: object lifecycle
+objects_before <- ls()
+# temporary objects
+temp1 <- data.frame(a = 1:1000, b = letters[1:1000])
+temp2 <- matrix(rnorm(10000), ncol = 100)
+objects_after_create <- ls()
+
+rm(temp1, temp2); gc()
+objects_after_cleanup <- ls()
+
+lens <- c(length(objects_before), length(objects_after_create), length(objects_after_cleanup))
+knitr::kable(
+  data.frame(Stage = c("Before", "After creating temps", "After cleanup"), Objects = lens),
+  caption = "Environment size across cleanup steps"
+)
+```
+
+---
+
+# 3. Working with data.table for High Performance
+
+**Why data.table**: extremely fast, concise syntax, and **in‑place** updates save memory.
+
+## 3.1 Introduction to data.table
+
+- **Enhanced data.frame** with **DT[i, j, by]** grammar:  
+  **i** (row filtering), **j** (columns/expressions), **by** (grouping).  
+- Optimized C code and keys enable blazing‑fast joins and aggregations.
+
+```{r dt-intro}
+# Convert to data.table
+large_dt <- as.data.table(large_data)
+list(original_class = class(large_data), dt_class = class(large_dt))
+```
+
+## 3.2 Basic data.table Operations
+
+```{r dt-basics}
+# 1) Filtering rows (i)
+high_income <- large_dt[Income > 70000]
+list(high_income_n = nrow(high_income), preview = head(high_income, 3))
+
+# 2) Selecting columns (j)
+selected_cols <- large_dt[, .(ID, Age, Income)]
+list(selected_names = names(selected_cols), preview = head(selected_cols, 3))
+
+# 3) Creating new columns (in place)
+large_dt[, Income_Category := ifelse(Income < 40000, "Low",
+                                     ifelse(Income < 70000, "Medium", "High"))]
+inc_dist <- as.data.frame(table(large_dt$Income_Category))
+knitr::kable(inc_dist, col.names = c("Income_Category", "Count"))
+
+# 4) Update by reference: Age groups
+large_dt[, Age_Group := cut(Age, breaks = c(18, 30, 45, 60, 65),
+                            labels = c("18-30", "31-45", "46-60", "61-65"))]
+age_dist <- as.data.frame(table(large_dt$Age_Group))
+knitr::kable(age_dist, col.names = c("Age_Group", "Count"))
+```
+
+## 3.3 Aggregation with data.table
+
+```{r dt-aggregate}
+# Simple aggregation: income by education
+income_by_edu <- large_dt[, .(
+  Avg_Income = mean(Income),
+  Median_Income = median(Income),
+  Count = .N
+), by = Education][order(-Avg_Income)]
+
+income_by_edu
+
+# Multiple aggregations by age group
+age_summary <- large_dt[, .(
+  Min_Income = min(Income),
+  Avg_Income = mean(Income),
+  Max_Income = max(Income),
+  Avg_Score = mean(Score),
+  Count = .N
+), by = Age_Group][order(Age_Group)]
+
+age_summary
+
+# Chained operations
+result <- large_dt[Income > 50000,
+                   .(Avg_Score = mean(Score), Count = .N),
+                   by = .(Education, Income_Category)][Count > 1000][order(-Avg_Score)]
+head(result, 5)
+```
+
+## 3.4 Memory Efficiency with data.table
+
+```{r dt-memory}
+# Copy vs in-place update (illustration – mem_used is approximate)
+mem_before <- mem_used()
+large_copy <- large_dt
+large_copy$Income <- large_copy$Income * 1.05
+mem_after_copy <- mem_used()
+copy_delta <- as.numeric(mem_after_copy - mem_before)/1024^2
+
+# In-place update
+mem_before_inplace <- mem_used()
+large_dt[, Income := Income * 1.05]
+mem_after_inplace <- mem_used()
+inplace_delta <- as.numeric(mem_after_inplace - mem_before_inplace)/1024^2
+
+kable(
+  tibble(Approach = c("Copy then modify", "In-place modify (:=)"),
+         Approx_MB_Change = round(c(copy_delta, inplace_delta), 2)),
+  caption = "Approximate memory change: copy vs in-place"
+)
+
+# Reset Income for clarity
+large_dt[, Income := Income / 1.05]
+
+# .SDcols example
+selected_summary <- large_dt[, lapply(.SD, mean), .SDcols = c("Income", "Score"), by = Education]
+head(selected_summary)
+```
+
+## 3.5 Visualizing data.table Results
+
+```{r dt-viz}
+viz_data <- large_dt[, .(Avg_Income = mean(Income), Avg_Score = mean(Score), Count = .N),
+                     by = .(Education, Age_Group)]
+viz_data <- viz_data[Count > 10000]
+
+# Bar plot: average income by education
+p1 <- ggplot(viz_data, aes(x = Education, y = Avg_Income, fill = Education)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Average Income by Education Level", x = "Education", y = "Average Income ($)") +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(p1)
+
+# Scatter: income vs score by age group
+p2 <- ggplot(viz_data, aes(x = Avg_Income, y = Avg_Score, color = Age_Group, size = Count)) +
+  geom_point(alpha = 0.7) +
+  labs(title = "Income vs Score by Age Group", x = "Average Income ($)", y = "Average Score",
+       color = "Age Group", size = "Count") +
+  theme_minimal()
+print(p2)
+```
+
+---
+
+# 4. Memory‑Efficient Data Wrangling with dplyr
+
+**Why dplyr**: readable verb‑based grammar, good for medium to large datasets and complex pipelines.
+
+## 4.1 Introduction to dplyr
+
+- Core verbs: **filter**, **select**, **mutate**, **summarise**, **arrange**, **group_by**  
+- Great integration with the tidyverse and plotting libraries
+
+```{r dplyr-intro}
+large_tbl <- as_tibble(large_data)
+class(large_tbl)
+```
+
+## 4.2 Basic dplyr Operations
+
+```{r dplyr-basics}
+# 1) Filtering rows
+high_edu <- large_tbl %>% filter(Education %in% c("Master", "PhD"))
+list(n_advanced = nrow(high_edu), preview = head(high_edu, 3))
+
+# 2) Selecting columns
+selected <- large_tbl %>% select(ID, Age, Income, Education)
+list(cols = names(selected), preview = head(selected, 3))
+
+# 3) Creating new columns
+with_categories <- large_tbl %>%
+  mutate(Performance = case_when(
+    Score >= 90 ~ "Excellent",
+    Score >= 80 ~ "Good",
+    Score >= 70 ~ "Average",
+    Score >= 60 ~ "Below Average",
+    TRUE ~ "Poor"
+  ))
+
+as.data.frame(table(with_categories$Performance))
+
+# 4) Sorting data
+top_earners <- large_tbl %>% arrange(desc(Income)) %>% head(10)
+top_earners
+```
+
+## 4.3 Aggregation with dplyr
+
+```{r dplyr-aggregate}
+# Simple summarisation
+overall_summary <- large_tbl %>% summarise(
+  Avg_Age = mean(Age), Avg_Income = mean(Income), Avg_Score = mean(Score), Total_Count = n())
+overall_summary
+
+# Grouped aggregation
+edu_summary <- large_tbl %>%
+  group_by(Education) %>%
+  summarise(Count = n(), Avg_Income = mean(Income), Median_Income = median(Income), Avg_Score = mean(Score), .groups = 'drop') %>%
+  arrange(desc(Avg_Income))
+edu_summary
+
+# Multiple grouping levels
+detailed_summary <- large_tbl %>%
+  mutate(Age_Group = cut(Age, breaks = c(18, 30, 45, 60, 65), labels = c("18-30", "31-45", "46-60", "61-65"))) %>%
+  group_by(Education, Age_Group) %>%
+  summarise(Count = n(), Avg_Income = mean(Income), Avg_Score = mean(Score), .groups = 'drop') %>%
+  filter(Count > 1000) %>% arrange(Education, Age_Group)
+head(detailed_summary, 10)
+```
+
+## 4.4 Chaining Operations with the Pipe Operator
+
+**Pattern**: `data %>% filter(...) %>% mutate(...) %>% group_by(...) %>% summarise(...) %>% arrange(...)`
+
+```{r dplyr-pipeline}
+analysis_result <- large_tbl %>%
+  filter(Income > 30000, Score > 60) %>%
+  mutate(
+    Income_Group = case_when(Income < 50000 ~ "Low", Income < 80000 ~ "Medium", TRUE ~ "High"),
+    Score_Group  = case_when(Score >= 90 ~ "A", Score >= 80 ~ "B", Score >= 70 ~ "C", Score >= 60 ~ "D", TRUE ~ "F")
+  ) %>%
+  group_by(Education, Income_Group, Score_Group) %>%
+  summarise(Count = n(), Avg_Age = mean(Age), Min_Score = min(Score), Max_Score = max(Score), .groups = 'drop') %>%
+  filter(Count > 100) %>% arrange(Education, desc(Count))
+
+list(dimensions = dim(analysis_result), preview = head(analysis_result, 5))
+```
+
+## 4.5 Memory Considerations with dplyr
+
+```{r dplyr-memory}
+# Inefficient (creates multiple copies)
+mem_before <- mem_used()
+result1 <- filter(large_tbl, Income > 50000)
+result2 <- select(result1, ID, Income)
+result3 <- mutate(result2, Income_K = Income / 1000)
+mem_after_inefficient <- mem_used()
+rm(result1, result2, result3); gc()
+
+# Efficient single pipeline
+mem_before_efficient <- mem_used()
+result_efficient <- large_tbl %>% filter(Income > 50000) %>% select(ID, Income) %>% mutate(Income_K = Income / 1000)
+mem_after_efficient <- mem_used()
+
+kable(
+  tibble(
+    Approach = c("Inefficient multi-copy", "Efficient pipeline"),
+    Approx_KB = round(c(as.numeric(mem_after_inefficient - mem_before), as.numeric(mem_after_efficient - mem_before_efficient))/1024, 1)
+  ), caption = "Approximate memory use: multi‑copy vs pipeline"
+)
+```
+
+---
+
+# 5. Performance Comparison: data.table vs dplyr
+
+**Purpose**: Benchmark filtering and aggregation on a common 100K sample. Lower time = better.
+
+## 5.1 Benchmarking Setup
+
+```{r bench-setup}
+set.seed(123)
+sample_size <- 100000
+benchmark_sample <- large_data[sample(nrow(large_data), sample_size), ]
+benchmark_dt  <- as.data.table(benchmark_sample)
+benchmark_tbl <- as_tibble(benchmark_sample)
+list(rows = sample_size, prepared = c("data.table", "tibble"))
+```
+
+## 5.2 Filtering Operation Comparison
+
+```{r bench-filter}
+filter_benchmark <- microbenchmark(
+  data.table = { nrow(benchmark_dt[Income > 60000 & Score > 75]) },
+  dplyr      = { benchmark_tbl %>% filter(Income > 60000, Score > 75) %>% nrow() },
+  times = 10
+)
+filter_benchmark
+
+# Summary table
+filter_summary <- as_tibble(filter_benchmark) %>%
+  group_by(expr) %>% summarise(Mean_ms = mean(time/1e6), Median_ms = median(time/1e6), .groups = 'drop')
+knitr::kable(filter_summary, caption = "Filtering performance (milliseconds)")
+
+# Visualise
+p_filter <- ggplot(filter_benchmark, aes(x = expr, y = time/1e6, fill = expr)) +
+  geom_boxplot() + labs(title = "Filtering Performance", subtitle = "Lower is better",
+                        x = "Method", y = "Time (ms)") + theme_minimal()
+print(p_filter)
+```
+
+## 5.3 Grouped Aggregation Comparison
+
+```{r bench-agg}
+agg_benchmark <- microbenchmark(
+  data.table = { benchmark_dt[, .(Avg_Income = mean(Income), Avg_Score = mean(Score), Count = .N), by = Education][] },
+  dplyr      = { benchmark_tbl %>% group_by(Education) %>% summarise(Avg_Income = mean(Income), Avg_Score = mean(Score), Count = n(), .groups = 'drop') },
+  times = 10
+)
+agg_benchmark
+
+agg_summary <- as_tibble(agg_benchmark) %>% group_by(expr) %>%
+  summarise(Mean_ms = mean(time/1e6), Median_ms = median(time/1e6), .groups = 'drop')
+knitr::kable(agg_summary, caption = "Grouped aggregation performance (milliseconds)")
+
+p_agg <- ggplot(agg_benchmark, aes(x = expr, y = time/1e6, fill = expr)) +
+  geom_boxplot() + labs(title = "Grouped Aggregation Performance", subtitle = "Lower is better",
+                        x = "Method", y = "Time (ms)") + theme_minimal()
+print(p_agg)
+```
+
+## 5.4 Complex Operation Comparison
+
+```{r bench-complex}
+benchmark_dt[, Age_Group := cut(Age, breaks = c(18, 30, 45, 60, 65), labels = c("18-30", "31-45", "46-60", "61-65"))]
+benchmark_tbl <- benchmark_tbl %>% mutate(Age_Group = cut(Age, breaks = c(18, 30, 45, 60, 65), labels = c("18-30", "31-45", "46-60", "61-65")))
+
+complex_benchmark <- microbenchmark(
+  data.table = {
+    benchmark_dt[Income > 40000,
+                 .(Avg_Income = mean(Income), Avg_Score = mean(Score), Count = .N),
+                 by = .(Education, Age_Group)][Count > 100][order(-Avg_Income)]
+  },
+  dplyr = {
+    benchmark_tbl %>% filter(Income > 40000) %>% group_by(Education, Age_Group) %>%
+      summarise(Avg_Income = mean(Income), Avg_Score = mean(Score), Count = n(), .groups = 'drop') %>%
+      filter(Count > 100) %>% arrange(desc(Avg_Income))
+  }, times = 10
+)
+complex_benchmark
+
+complex_summary <- as_tibble(complex_benchmark) %>% group_by(expr) %>%
+  summarise(Mean_ms = mean(time/1e6), Median_ms = median(time/1e6), .groups = 'drop')
+knitr::kable(complex_summary, caption = "Complex chain performance (milliseconds)")
+
+p_complex <- ggplot(complex_benchmark, aes(x = expr, y = time/1e6, fill = expr)) +
+  geom_boxplot() + labs(title = "Complex Operation Chain Performance", subtitle = "Lower is better",
+                        x = "Method", y = "Time (ms)") + theme_minimal()
+print(p_complex)
+```
+
+## 5.5 Memory Usage Comparison
+
+```{r bench-memory}
+compare_memory_usage <- function() {
+  results <- data.frame(Operation = character(), Method = character(), Memory_MB = numeric())
+  # Filtering
+  mem_before <- mem_used(); dt_result <- benchmark_dt[Income > 60000]; mem_after <- mem_used()
+  results <- rbind(results, data.frame(Operation = "Filtering", Method = "data.table", Memory_MB = as.numeric(mem_after - mem_before)/1024^2))
+  rm(dt_result); gc()
+  mem_before <- mem_used(); dplyr_result <- benchmark_tbl %>% filter(Income > 60000); mem_after <- mem_used()
+  results <- rbind(results, data.frame(Operation = "Filtering", Method = "dplyr", Memory_MB = as.numeric(mem_after - mem_before)/1024^2))
+  rm(dplyr_result); gc()
+  # Aggregation
+  mem_before <- mem_used(); dt_result <- benchmark_dt[, .(Avg_Income = mean(Income)), by = Education]; mem_after <- mem_used()
+  results <- rbind(results, data.frame(Operation = "Aggregation", Method = "data.table", Memory_MB = as.numeric(mem_after - mem_before)/1024^2))
+  rm(dt_result); gc()
+  mem_before <- mem_used(); dplyr_result <- benchmark_tbl %>% group_by(Education) %>% summarise(Avg_Income = mean(Income), .groups = 'drop'); mem_after <- mem_used()
+  results <- rbind(results, data.frame(Operation = "Aggregation", Method = "dplyr", Memory_MB = as.numeric(mem_after - mem_before)/1024^2))
+  results
+}
+
+memory_comparison <- compare_memory_usage()
+knitr::kable(memory_comparison, caption = "Approximate memory usage by operation (MB)")
+
+p_memory <- ggplot(memory_comparison, aes(x = Operation, y = Memory_MB, fill = Method)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Memory Usage Comparison", subtitle = "Lower is better", x = "Operation", y = "Memory (MB)") +
+  theme_minimal()
+print(p_memory)
+```
+
+---
+
+# 6. Working with Extremely Large Files
+
+**Scenario**: Data doesn’t fit in RAM. Use **chunk processing**, **databases**, or **columnar formats**.
+
+## 6.1 Chunk Processing with readr
+
+**Instructions**: The following example writes a large CSV and then processes it in chunks of 100K rows. To avoid long knit times, the writing and chunk processing are set to `eval=FALSE`. Run interactively when needed.
+
+```{r chunk-processing, eval=FALSE}
+# Create large CSV file for demonstration
+large_csv_file <- "data/large_demo_data.csv"
+if (!dir.exists("data")) dir.create("data")
+write.csv(large_data, large_csv_file, row.names = FALSE)
+file_size <- file.info(large_csv_file)$size / 1024^2
+cat(sprintf("Created %s (%.2f MB)\n", large_csv_file, file_size))
+
+# Chunk processing function (100,000 rows per chunk)
+process_file_in_chunks <- function(file_path, chunk_size = 100000) {
+  chunk_count <- 0
+  process_chunk <- function(chunk, pos) {
+    chunk_count <<- chunk_count + 1
+    chunk %>%
+      filter(Income > 50000) %>%
+      group_by(Education) %>%
+      summarise(Avg_Income = mean(Income), Count = n(), .groups = 'drop') %>%
+      mutate(Chunk = chunk_count)
+  }
+  readr::read_csv_chunked(
+    file_path,
+    callback = readr::DataFrameCallback$new(process_chunk),
+    chunk_size = chunk_size,
+    progress = readr::readr_progress()
+  )
+}
+
+chunk_results <- process_file_in_chunks('data/large_demo_data.csv')
+head(chunk_results)
+```
+
+## 6.2 Database Integration
+
+**Why**: For very large datasets, a lightweight database like **SQLite** allows SQL queries and persistence beyond RAM.
+
+```{r db-integration, eval=FALSE}
+# Example workflow (run as needed)
+# install.packages('RSQLite')
+# library(RSQLite)
+# conn <- dbConnect(SQLite(), 'data/large_data.db')
+# dbWriteTable(conn, 'employee_data', large_data, overwrite = TRUE)
+# result <- dbGetQuery(conn, "SELECT Education, AVG(Income) AS Avg_Income, COUNT(*) AS Count
+#                              FROM employee_data WHERE Income > 50000
+#                              GROUP BY Education ORDER BY Avg_Income DESC")
+# dbDisconnect(conn)
+```
+
+## 6.3 Arrow Format for Large Data
+
+**Apache Arrow/Parquet** offers fast, columnar storage and memory‑mapping.
+
+```{r arrow-demo, eval=FALSE}
+# install.packages('arrow')
+# library(arrow)
+# write_parquet(large_data, 'data/large_data.parquet')
+# arrow_data <- read_parquet('data/large_data.parquet')
+# result <- arrow_data %>% filter(Income > 50000) %>% group_by(Education) %>%
+#   summarise(Avg_Income = mean(Income)) %>% collect()
+# head(result)
+```
+
+---
+
+# 7. Data Import and Export for Large Datasets
+
+## 7.1 Comparing File Formats
+
+**Overview**: CSV (portable but large/slow); RDS/RData (R‑native); Feather/Parquet (fast, multi‑language; needs packages).
+
+```{r format-compare}
+set.seed(123)
+if (!dir.exists("data")) dir.create("data")
+test_sample <- large_data[sample(nrow(large_data), 10000), ]
+
+# CSV
+csv_file <- "data/test_data.csv"; write.csv(test_sample, csv_file, row.names = FALSE)
+csv_size <- file.info(csv_file)$size / 1024^2
+
+# RDS
+rds_file <- "data/test_data.rds"; saveRDS(test_sample, rds_file)
+rds_size <- file.info(rds_file)$size / 1024^2
+
+# RData
+rdata_file <- "data/test_data.RData"; save(test_sample, file = rdata_file)
+rdata_size <- file.info(rdata_file)$size / 1024^2
+
+sizes <- tibble(Format = c("CSV", "RDS", "RData"), Size_MB = round(c(csv_size, rds_size, rdata_size), 2))
+knitr::kable(sizes, caption = "File sizes by format (10K rows sample)")
+
+# Optional: Feather (if available)
+if (requireNamespace("feather", quietly = TRUE)) {
+  feather_file <- "data/test_data.feather"
+  feather::write_feather(test_sample, feather_file)
+  feather_size <- round(file.info(feather_file)$size / 1024^2, 2)
+  knitr::kable(tibble(Format = "Feather", Size_MB = feather_size), caption = "Feather size (optional)")
+}
+
+# Cleanup
+file.remove(csv_file, rds_file, rdata_file)
+if (file.exists("data/test_data.feather")) file.remove("data/test_data.feather")
+```
+
+## 7.2 Performance Comparison of Read/Write Operations
+
+```{r io-bench}
+io_data <- large_data[sample(nrow(large_data), 10000), ]
+
+write_benchmark <- microbenchmark(
+  CSV   = write.csv(io_data, "temp_csv.csv", row.names = FALSE),
+  RDS   = saveRDS(io_data, "temp_rds.rds"),
+  RData = save(io_data, file = "temp_rdata.RData"),
+  times = 5
+)
+write_benchmark
+
+read_benchmark <- microbenchmark(
+  CSV   = read.csv("temp_csv.csv"),
+  RDS   = readRDS("temp_rds.rds"),
+  RData = {load("temp_rdata.RData"); io_data},
+  times = 5
+)
+read_benchmark
+
+file.remove(c("temp_csv.csv", "temp_rds.rds", "temp_rdata.RData"))
+
+write_times <- tibble(
+  Format = c("CSV", "RDS", "RData"), Operation = "Write",
+  Time_ms = c(median(write_benchmark[write_benchmark$expr == "CSV", "time"])/1e6,
+              median(write_benchmark[write_benchmark$expr == "RDS", "time"])/1e6,
+              median(write_benchmark[write_benchmark$expr == "RData", "time"])/1e6)
+)
+read_times <- tibble(
+  Format = c("CSV", "RDS", "RData"), Operation = "Read",
+  Time_ms = c(median(read_benchmark[read_benchmark$expr == "CSV", "time"])/1e6,
+              median(read_benchmark[read_benchmark$expr == "RDS", "time"])/1e6,
+              median(read_benchmark[read_benchmark$expr == "RData", "time"])/1e6)
+)
+io_times <- rbind(write_times, read_times)
+
+p_io <- ggplot(io_times, aes(x = Format, y = Time_ms, fill = Operation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "I/O Performance by File Format", subtitle = "Lower time is better",
+       x = "File Format", y = "Time (ms)") + theme_minimal()
+print(p_io)
+```
+
+## 7.3 Efficient Data Import Strategies
+
+**Strategies**
+1) **Read only necessary columns** (e.g., `fread(select=...)`)  
+2) **Specify column types** upfront to speed parsing  
+3) **Sample or skip rows** for quick inspection  
+4) **Show progress bars** on long imports  
+5) Use **parallel reading** when supported
+
+```{r efficient-import, eval=FALSE}
+# Example: Efficient CSV reading with data.table
+library(data.table)
+large_data <- fread('data/large_demo_data.csv',
+                    select = c('ID', 'Age', 'Income', 'Score'),
+                    nrows = 500000,  # Limit rows if needed
+                    showProgress = TRUE)
+```
+
+---
+
+# 8. Parallel Processing for Large Datasets
+
+## 8.1 Introduction to Parallel Processing
+
+- Parallelism divides work across multiple CPU cores  
+- Best for **CPU‑bound**, independent tasks (not I/O‑bound)  
+- Packages: **parallel** (base), **foreach**/**doParallel**, **future**
+
+## 8.2 Simple Parallel Processing Example
+
+```{r parallel-simple}
+if (require(parallel, quietly = TRUE)) {
+  set.seed(123)
+  demo_data <- large_data[sample(nrow(large_data), 100000), ]
+
+  process_chunk <- function(chunk_data) {
+    data.frame(Avg_Income = mean(chunk_data$Income), Avg_Score = mean(chunk_data$Score), Count = nrow(chunk_data))
+  }
+
+  # Sequential
+  start_seq <- Sys.time()
+  chunks <- split(demo_data, cut(seq_len(nrow(demo_data)), 4, labels = FALSE))
+  seq_results <- lapply(chunks, process_chunk)
+  seq_final <- do.call(rbind, seq_results)
+  seq_time <- as.numeric(Sys.time() - start_seq)
+
+  # Parallel (2 cores)
+  start_par <- Sys.time(); cl <- makeCluster(2)
+  clusterExport(cl, "process_chunk")
+  par_results <- parLapply(cl, chunks, process_chunk)
+  stopCluster(cl)
+  par_final <- do.call(rbind, par_results)
+  par_time <- as.numeric(Sys.time() - start_par)
+
+  kable(tibble(Method = c("Sequential", "Parallel (2 cores)"), Seconds = round(c(seq_time, par_time), 2),
+               Speedup = c(1, round(seq_time/par_time, 2))), caption = "Sequential vs Parallel timing")
+} else {
+  "Package 'parallel' not available (install if needed)."
+}
+```
+
+## 8.3 Parallel Processing with foreach
+
+```{r foreach-demo}
+if (require(doParallel, quietly = TRUE) && require(foreach, quietly = TRUE)) {
+  set.seed(123)
+  sample_income <- large_data$Income[1:10000]
+
+  # Sequential bootstrap
+  start_seq <- Sys.time()
+  seq_bootstrap <- replicate(1000, mean(sample(sample_income, 1000, replace = TRUE)))
+  seq_time <- as.numeric(Sys.time() - start_seq)
+
+  # Parallel bootstrap (2 cores)
+  cl <- makeCluster(2); registerDoParallel(cl)
+  start_par <- Sys.time()
+  par_bootstrap <- foreach(i = 1:1000, .combine = c) %dopar% {
+    mean(sample(sample_income, 1000, replace = TRUE))
+  }
+  stopCluster(cl)
+  par_time <- as.numeric(Sys.time() - start_par)
+
+  kable(tibble(Method = c("Sequential", "Parallel (2 cores)"), Seconds = round(c(seq_time, par_time), 2),
+               Speedup = c(1, round(seq_time/par_time, 2))), caption = "Bootstrap timing: sequential vs parallel")
+} else {
+  "Install 'doParallel' and 'foreach' to run this example."
+}
+```
+
+## 8.4 When Not to Use Parallel Processing
+
+- **Small datasets**: overhead outweighs benefits  
+- **I/O‑bound** tasks: threads wait on disk/network  
+- **Tight memory**: each worker may duplicate data  
+- **Dependent steps**: cannot parallelise effectively  
+- **Resource contention**: many workers can slow the system
+
+> **Best practice**: Always test sequential vs parallel; monitor memory; consider the **future** framework for flexible backends.
+
+---
+
+# 9. Best Practices and Tips for Large Datasets
+
+## 9.1 Memory Management Strategies
+
+- Use appropriate types (integers, factors); specify types on import  
+- Remove unused data (`df$col <- NULL`; `rm()` + `gc()`)  
+- Process in chunks (`readr::read_csv_chunked()`); write intermediates  
+- Monitor usage (`pryr::mem_used()`, `object.size()`); set limits (Windows)  
+- Packages for big data: **data.table**, **Matrix** (sparse), **bigmemory**, **ff**
+
+## 9.2 Performance Optimization
+
+- Choose the right tool: **data.table** for >1M rows; **dplyr** for readable pipelines  
+- Avoid unnecessary copies; prefer **in‑place** (`:=`)  
+- Optimise I/O: **fst**, **feather**, **arrow**; read only needed columns  
+- Parallelise CPU‑bound parts (leave one core free); benchmark with `microbenchmark`  
+- Profile hot spots (`profvis::profvis()`, `system.time()`, RStudio profiler)
+
+## 9.3 Data Storage Strategies
+
+```{r storage-table, echo=FALSE}
+storage_table <- data.frame(
+  Format = c("CSV", "RDS", "RData", "Feather", "FST", "Parquet", "SQLite"),
+  Best_For = c("Data exchange, human reading", "R objects, fast loading", "Multiple R objects",
+               "Fast I/O, language-agnostic", "Large datasets, fast access", "Columnar storage, big data", "Relational data, querying"),
+  Pros = c("Universal, readable", "Preserves objects, fast read", "Save multiple objects",
+           "Very fast, multi-language", "Extremely fast, compression", "Efficient queries, compression", "SQL, concurrent access"),
+  Cons = c("Slow, large files", "R-specific, binary", "Cannot inspect without loading",
+           "Larger file size", "Less universal", "Requires 'arrow'", "DB setup needed")
+)
+knitr::kable(storage_table, caption = "Data storage formats: pros and cons")
+```
+
+**Compression**: `saveRDS(..., compress=TRUE)`; gzip CSVs; `fst` compression levels  
+**Partitioning**: split by time/category; directory partitioning; DB partitioning  
+**Versioning**: use Git‑LFS; maintain metadata, lineage, and dictionaries
+
+## 9.4 Workflow Recommendations
+
+- **Project structure**: use RStudio Projects; folders: `data/`, `scripts/`, `output/`, `figs/`  
+- **Reproducibility**: set seeds; manage packages with **renv**; use R Markdown  
+- **Monitoring**: show progress bars; log steps; checkpoint long workflows  
+- **Error handling**: `tryCatch()`; validate early; test on small samples first  
+- **Documentation**: comment why (not just what); keep data dictionaries and READMEs
+
+---
+
+
+
+
+# 10. Decision Guide: When to Use What
+Based on our comparisons and experiences, here's a practical guide to choosing the right tool for your large data tasks.
+
+## 10.1 Library Selection Guide
+Selecting the appropriate library depends on your specific needs
+```{r echo = FALSE}
+
+decision_table <- data.frame(
+  Scenario = c(
+    "Dataset size < 1 million rows",
+    "Dataset size 1–10 million rows",
+    "Dataset size > 10 million rows",
+    "Need maximum speed for aggregation",
+    "Prioritize code readability",
+    "Complex data manipulation pipelines",
+    "Memory is a tight constraint",
+    "Need to join/merge large datasets",
+    "Working with time series data",
+    "Interactive data exploration"
+  ),
+  `Recommended Tool` = c(
+    "dplyr (or data.table)",
+    "data.table (or dplyr with care)",
+    "data.table, chunking, or databases",
+    "data.table",
+    "dplyr",
+    "dplyr with pipes",
+    "data.table (in-place ops)",
+    "data.table with keys",
+    "data.table",
+    "dplyr or data.table"
+  ),
+  Reason = c(
+    "Readable and sufficiently fast",
+    "Performance advantages become noticeable",
+    "Requires memory-efficient strategies",
+    "Highly optimized C-level aggregation",
+    "Verb-based syntax is intuitive",
+    "Pipelines remain easy to understand",
+    "Avoids unnecessary data copies",
+    "Fast binary-search joins",
+    "Optimized rolling and time-based ops",
+    "Depends on speed vs readability needs"
+  ),
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  decision_table,
+  caption = "Decision Guide for Choosing Between dplyr and data.table",
+  align = c("l", "l", "l")
+)
+```
+
+### KEY TAKEAWAYS
+- For most analytical tasks under 1M rows, dplyr is an excellent choice due to its readability and ease of use.
+- For larger datasets or performance-critical workloads, data.table is generally the better option because of its speed and memory efficiency.
+- A hybrid approach often works best—use data.table for heavy data processing and dplyr for clear, expressive presentation.
+- Always benchmark and test with your actual data and operations before choosing a tool.
+
+
+
+
+## 10.2 Function Comparison Table
+```{r echo = FALSE}
+cat("=== FUNCTION COMPARISON: data.table vs dplyr ===\n\n")
+
+# Create a detailed comparison table
+comparison_table <- data.frame(
+  Operation = c(
+    "Filter rows",
+    "Select columns",
+    "Create new column",
+    "Group by and summarize",
+    "Sort data",
+    "Join/merge datasets",
+    "Update values",
+    "Count rows by group",
+    "Remove duplicates",
+    "Reshape data"
+  ),
+  `data.table` = c(
+    "DT[condition]",
+    "DT[, .(col1, col2)]",
+    "DT[, new_col := expression]",
+    "DT[, .(mean = mean(x)), by = group]",
+    "DT[order(col)]",
+    "DT1[DT2, on = 'key']",
+    "DT[condition, col := value]",
+    "DT[, .N, by = group]",
+    "unique(DT)",
+    "dcast/melt from data.table"
+  ),
+  dplyr = c(
+    "filter(condition)",
+    "select(col1, col2)",
+    "mutate(new_col = expression)",
+    "group_by(group) %>% summarise(mean = mean(x))",
+    "arrange(col)",
+    "left_join(DT1, DT2, by = 'key')",
+    "mutate(col = ifelse(condition, value, col))",
+    "group_by(group) %>% tally()",
+    "distinct()",
+    "pivot_wider/pivot_longer from tidyr"
+  ),
+  Notes = c(
+    "Similar syntax, both fast",
+    "data.table uses .() notation",
+    "data.table modifies in place (memory efficient)",
+    "data.table significantly faster for large groups",
+    "Both efficient, data.table slightly faster",
+    "data.table much faster with keys set",
+    "data.table more memory efficient",
+    "Both similar, .N is data.table shorthand",
+    "Both efficient",
+    "data.table's melt/dcast often faster"
+  ),
+  check.names = FALSE
+)
+
+knitr::kable(
+  comparison_table,
+  caption = "Function Comparison: data.table vs dplyr",
+  align = "l"
+)
+```
+
+Notes:
+- data.table: Generally 2–10× faster for large datasets
+- dplyr: More consistent syntax, easier to read
+- Memory: data.table uses less memory due to in-place operations
+- Learning curve: dplyr is easier to learn, while data.table is more concise
+
+
+
+
+
+## 10.3 Practical Recommendations
+Based on extensive testing and real-world usage:
+
+### 1. FOR BEGINNERS OR TEAMS
+- Start with dplyr for its intuitive syntax
+- Switch to data.table when performance becomes an issue
+- Document which operations are performance-critical
+- Create wrapper functions if needed for consistency
+
+### 2. FOR PRODUCTION SYSTEMS
+- Use data.table for backend data processing
+- Consider databases for data > RAM size
+- Implement proper error handling and logging
+- Monitor memory usage and performance
+
+### 3. FOR RESEARCH/EXPLORATION
+- Use dplyr for interactive exploration
+- Switch to data.table for final analysis if needed
+- Create reproducible scripts with both approaches
+- Benchmark to justify tool choices
+
+### 4. HYBRID APPROACH
+Many successful teams use:
+- data.table for ETL and heavy processing
+- dplyr for analysis and reporting
+- Specialized packages for specific tasks
+- Clear guidelines on when to use each
+
+### 5. MIGRATION STRATEGY
+If moving from dplyr to data.table:
+1. Profile to identify bottlenecks
+2. Convert only critical sections first
+3. Test thoroughly for correctness
+4. Document the performance gains
+
+
+## 10.4 Summary Table: Key Functions for Big Data
+```{r echo = FALSE}
+cat("=== SUMMARY: KEY FUNCTIONS FOR BIG DATA ===\n\n")
+
+
+# Create the table
+summary_functions <- data.frame(
+  Task = c(
+    "Fast data reading",
+    "Memory-efficient filtering",
+    "Quick aggregation",
+    "Fast joins/merges",
+    "Large file writing",
+    "Chunk processing",
+    "Memory monitoring",
+    "Progress tracking",
+    "Parallel processing",
+    "Data compression"
+  ),
+  Recommended_Function = c(
+    "data.table::fread()",
+    "data.table filtering with i",
+    "data.table aggregation with by",
+    "data.table joins with on and keys",
+    "fst::write_fst() or arrow::write_parquet()",
+    "readr::read_csv_chunked()",
+    "pryr::mem_used() and object.size()",
+    "progress::progress_bar or built-in showProgress",
+    "future::plan() and future.apply",
+    "saveRDS(compress = TRUE)"
+  ),
+  Package = c(
+    "data.table",
+    "data.table",
+    "data.table",
+    "data.table",
+    "fst or arrow",
+    "readr",
+    "pryr",
+    "progress or data.table",
+    "future",
+    "base R"
+  ),
+  When_To_Use = c(
+    "Reading CSV files > 100MB",
+    "Filtering large datasets frequently",
+    "Grouped operations on >1M rows",
+    "Merging large datasets",
+    "Saving processed results",
+    "Files too large for memory",
+    "Monitoring memory consumption",
+    "Long-running operations",
+    "CPU-intensive tasks",
+    "Reducing storage footprint"
+  )
+)
+
+# Display as a Markdown table
+cat("### ESSENTIAL FUNCTIONS FOR LARGE DATASETS\n\n")
+knitr::kable(summary_functions, 
+      caption = "Recommended functions and packages for efficient large data processing",
+      align = c("l","l","l","l"))
+```
+
+### QUICK REFERENCE
+
+- For speed: data.table  
+- For memory: data.table with in-place operations  
+- For readability: dplyr  
+- For huge files: Chunk processing or databases  
+- For parallel: future package  
+- For storage: fst or arrow format
+
+
+
+# 11. Additional Resources and Next Steps
+
+To deepen your understanding of handling large datasets in R:
+
+## RESOURCES & REFERENCES
+
+### 1. Official Documentation
+- **data.table**: [https://rdatatable.gitlab.io/data.table/](https://rdatatable.gitlab.io/data.table/)
+- **dplyr**: [https://dplyr.tidyverse.org/](https://dplyr.tidyverse.org/)
+- **readr**: [https://readr.tidyverse.org/](https://readr.tidyverse.org/)
+- **arrow**: [https://arrow.apache.org/docs/r/](https://arrow.apache.org/docs/r/)
+
+### 2. Books
+- *R for Data Science* by Hadley Wickham & Garrett Grolemund
+- *Efficient R Programming* by Colin Gillespie & Robin Lovelace
+- *Advanced R* by Hadley Wickham
+- *The data.table Package* by Matt Dowle & Arun Srinivasan
+
+### 3. Online Courses
+- DataCamp: *Working with Large Datasets in R*
+- Coursera: *Big Data Analysis with R and Hadoop*
+- Udemy: *R Programming for Data Science*
+- EdX: *Data Science and Machine Learning Essentials*
+
+### 4. Community Resources
+- RStudio Community: [community.rstudio.com](https://community.rstudio.com)
+- Stack Overflow: [stackoverflow.com/questions/tagged/r](https://stackoverflow.com/questions/tagged/r)
+- GitHub: [github.com/topics/r](https://github.com/topics/r)
+- R-bloggers: [r-bloggers.com](https://www.r-bloggers.com)
+
+### 5. Practice Datasets
+- Kaggle: [kaggle.com/datasets](https://www.kaggle.com/datasets)
+- UCI Machine Learning Repository
+- Google Dataset Search
+- R dataset packages (e.g., *nycflights13*, *babynames*, etc.)
+
+
+
+## 11.2 Practice Exercises
+
+Apply what you've learned with these exercises:
+
+## PRACTICAL EXERCISES FOR LARGE DATA ANALYSIS
+
+### EXERCISE 1: BASIC OPERATIONS
+- Load the large dataset using both `fread()` and `read_csv()`
+- Compare loading times and memory usage
+- Filter for Age > 40 and Income > 60000 using both data.table and dplyr
+- Compare performance using `microbenchmark`
+
+### EXERCISE 2: AGGREGATION TASKS
+- Calculate average income by education level using both tools
+- Find the top 3 age groups by average score
+- Create a summary table with count, mean, and median by education
+- Visualize the results using `ggplot2`
+
+### EXERCISE 3: MEMORY MANAGEMENT
+- Monitor memory usage during a complex operation chain
+- Implement the same operation using in-place modifications
+- Compare memory usage before and after garbage collection
+- Write a function that cleans up intermediate objects
+
+### EXERCISE 4: LARGE FILE PROCESSING
+- Split the large dataset into multiple CSV files
+- Write a function to process each file independently
+- Combine results from all files
+- Implement progress reporting for the processing
+
+### EXERCISE 5: PERFORMANCE OPTIMIZATION
+- Identify the slowest part of your analysis pipeline
+- Try three different optimizations for that part
+- Measure the performance improvement
+- Document your findings and recommendations
+
+
+
+## 11.3 Common Pitfalls and Solutions
+
+Avoid these common mistakes when working with large datasets:
+
+### 1. OUT OF MEMORY ERRORS
+**Problem:** "Cannot allocate vector of size..."  
+**Solution:**
+- Process data in chunks
+- Remove unused objects with `rm()`
+- Use `gc()` to force garbage collection
+- Increase memory limit (if possible)
+- Use disk-based storage (`ff`, `bigmemory`)
+
+### 2. SLOW PERFORMANCE
+**Problem:** Operations take too long  
+**Solution:**
+- Use `data.table` instead of `data.frame`
+- Avoid loops; use vectorized operations
+- Set keys for frequent joins/filters
+- Use appropriate data types
+- Consider parallel processing
+
+### 3. INCORRECT RESULTS
+**Problem:** Results don't match expectations  
+**Solution:**
+- Test with a small sample first
+- Check for `NA`/`NULL` values
+- Verify data types and conversions
+- Use `summary()` and `str()` for verification
+- Implement data validation checks
+
+### 4. REPRODUCIBILITY ISSUES
+**Problem:** Code works on one machine but not another  
+**Solution:**
+- Use `set.seed()` for random operations
+- Document package versions with `sessionInfo()`
+- Use `renv` for package management
+- Specify absolute file paths or use the `here()` package
+- Create self-contained analysis scripts
+
+### 5. DATA IMPORT PROBLEMS
+**Problem:** Can't read large files  
+**Solution:**
+- Use `fread()` for CSV files
+- Specify column types in advance
+- Read only needed columns
+- Use chunked reading for very large files
+- Convert to efficient format (`fst`, `parquet`)
+
+
+---
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

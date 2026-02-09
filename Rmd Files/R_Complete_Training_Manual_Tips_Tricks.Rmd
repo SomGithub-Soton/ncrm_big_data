@@ -1,0 +1,2327 @@
+---
+title: "R Programming: Complete Training Manual with Tips & Tricks"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 4
+    geometry: margin=1in
+    fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300,
+  cache = FALSE
+)
+library(conflicted)
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+conflicts_prefer(base::`:`)
+conflicts_prefer(lubridate::year)
+conflicts_prefer(lubridate::month)
+conflicts_prefer(lubridate::wday)
+conflicts_prefer(lubridate::quarter)
+```
+
+# Introduction
+
+This comprehensive training manual provides essential tips, tricks, shortcuts, and best practices for R programming across various domains. Whether you're a beginner or intermediate user, this guide will help you write better, faster, and more efficient R code.
+
+## What You'll Learn
+
+1. **Basic R**: Fundamentals, shortcuts, and productivity tips
+2. **Data Handling**: Import, export, manipulation, and cleaning
+3. **Big Data**: Techniques for handling large datasets efficiently
+4. **Data Visualization**: Creating impactful graphics
+5. **Time Series**: Temporal data analysis and forecasting
+6. **Geospatial Data**: Mapping and spatial analysis
+7. **Shiny Apps**: Building interactive web applications
+
+---
+
+# 1. Basic R: Essential Tips and Tricks
+
+## 1.1 Getting Started: Initial Setup
+
+### RStudio Keyboard Shortcuts (Must Know!)
+
+```{r shortcuts_reference, eval=FALSE}
+# ESSENTIAL KEYBOARD SHORTCUTS (Works on Windows/Mac)
+# 
+# Code Execution:
+# Ctrl/Cmd + Enter        - Run current line or selection
+# Ctrl/Cmd + Shift + Enter - Run entire script
+# Ctrl/Cmd + Shift + S    - Source entire script
+# 
+# Code Editing:
+# Ctrl/Cmd + Shift + C    - Comment/uncomment lines
+# Ctrl/Cmd + I            - Re-indent code
+# Ctrl/Cmd + Shift + A    - Reformat code
+# Alt + -                 - Insert assignment operator <-
+# Ctrl/Cmd + Shift + M    - Insert pipe operator %>%
+# 
+# Navigation:
+# Ctrl/Cmd + 1            - Move cursor to source editor
+# Ctrl/Cmd + 2            - Move cursor to console
+# Ctrl/Cmd + Shift + F    - Find in files
+# Ctrl/Cmd + F            - Find/replace in current file
+# 
+# Code Completion:
+# Tab                     - Auto-complete
+# Ctrl/Cmd + Space        - Show function arguments
+# F1                      - Open help for function under cursor
+# 
+# Session Management:
+# Ctrl/Cmd + Shift + F10  - Restart R session
+# Ctrl/Cmd + L            - Clear console
+```
+
+### Setting Up Your R Environment
+
+```{r environment_setup, eval=FALSE}
+# 1. Set working directory (DO THIS FIRST!)
+setwd("~/R_Projects/MyProject")  # Linux/Mac
+setwd("C:/Users/YourName/R_Projects/MyProject")  # Windows
+
+# Better: Use RStudio Projects (.Rproj files) - they auto-set working directory!
+
+# 2. Check your current directory
+getwd()
+
+# 3. List files in directory
+list.files()
+dir()  # Same as list.files()
+
+# 4. Create project structure
+dir.create("data")
+dir.create("scripts")
+dir.create("output")
+dir.create("figures")
+
+# 5. Set global options
+options(
+  scipen = 999,              # Disable scientific notation
+  digits = 3,                # Number of digits to display
+  stringsAsFactors = FALSE,  # Don't auto-convert strings to factors
+  repos = "https://cran.rstudio.com/"  # Default CRAN mirror
+)
+```
+
+## 1.2 Basic R Dos and Don'ts
+
+###  DO's
+
+```{r basic_dos}
+#  DO: Use meaningful variable names
+customer_age <- c(25, 30, 35, 40)  # GOOD
+ca <- c(25, 30, 35, 40)            # BAD
+
+#  DO: Use <- for assignment (not =)
+x <- 5        # GOOD (R convention)
+x = 5         # Works, but not preferred
+
+#  DO: Add comments to explain your code
+# Calculate average customer age
+mean_age <- mean(customer_age)
+
+#  DO: Use consistent naming convention
+# Choose one and stick to it:
+snake_case_variable <- "recommended"  # snake_case (recommended)
+camelCaseVariable <- "also_good"      # camelCase
+# PascalCaseVariable <- "for_functions"  # PascalCase
+
+#  DO: Vectorize operations (avoid loops when possible)
+# GOOD - Vectorized
+numbers <- 1:1000
+squares <- numbers^2
+
+# BAD - Loop (slower)
+squares <- numeric(1000)
+for(i in 1:1000) {
+  squares[i] <- i^2
+}
+
+#  DO: Use built-in functions
+sum(1:100)              # GOOD
+total <- 0; for(i in 1:100) total <- total + i  # BAD
+
+#  DO: Check data structure regularly
+str(mtcars)    # Structure
+class(mtcars)  # Object class
+dim(mtcars)    # Dimensions
+head(mtcars)   # First few rows
+```
+
+###  DON'Ts
+
+```{r basic_donts, eval=FALSE}
+#  DON'T: Use attach() - it creates confusion
+attach(mtcars)  # BAD - creates ambiguity
+mpg             # Which mpg?
+detach(mtcars)
+
+# Instead, use:
+mtcars$mpg      # GOOD - explicit
+with(mtcars, mean(mpg))  # GOOD - clear scope
+
+#  DON'T: Grow objects in loops
+result <- c()
+for(i in 1:1000) {
+  result <- c(result, i^2)  # BAD - very slow!
+}
+
+# Instead, pre-allocate:
+result <- numeric(1000)
+for(i in 1:1000) {
+  result[i] <- i^2  # GOOD - much faster
+}
+
+#  DON'T: Use T and F for TRUE and FALSE
+x <- T   # BAD - T and F can be overwritten!
+x <- F   # BAD
+
+x <- TRUE   # GOOD
+x <- FALSE  # GOOD
+
+#  DON'T: Forget to set.seed() for reproducibility
+sample(1:10, 5)  # BAD - different results each time
+
+set.seed(123)
+sample(1:10, 5)  # GOOD - reproducible
+
+#  DON'T: Use == for comparing floating point numbers
+0.1 + 0.2 == 0.3  # Returns FALSE! (floating point precision)
+
+# Use all.equal() or near()
+all.equal(0.1 + 0.2, 0.3)  # TRUE
+dplyr::near(0.1 + 0.2, 0.3)  # TRUE
+```
+
+## 1.3 Package Management Best Practices
+
+### Installing and Loading Packages
+
+```{r package_management, eval=FALSE}
+#  GOOD: Check if package is installed before installing
+if (!require("dplyr")) {
+  install.packages("dplyr")
+}
+
+#  GOOD: Install multiple packages at once
+packages <- c("dplyr", "ggplot2", "tidyr", "readr")
+install.packages(packages)
+
+#  GOOD: Use pacman for smart package loading
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr, ggplot2, tidyr, readr)  # Installs if needed, then loads
+
+#  GOOD: Load packages at the start of your script
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+#  BAD: Loading packages in the middle of your script
+# ... makes it hard to track dependencies
+
+#  GOOD: Use package::function() for rare function calls
+# Avoids loading entire package
+conflicted::conflict_prefer("filter", "dplyr")
+
+# Check installed packages
+installed.packages()[, c("Package", "Version")]
+
+# Update all packages
+update.packages(ask = FALSE)
+
+# Remove package
+remove.packages("package_name")
+```
+
+### Managing Package Conflicts
+
+```{r package_conflicts}
+library(dplyr)
+library(MASS)  # MASS::select() conflicts with dplyr::select()
+
+#  SOLUTION 1: Use package prefix
+# MASS::select(iris, Species)
+# dplyr::select(iris, Species)
+
+#  SOLUTION 2: Use conflicted package
+library(conflicted)
+# conflict_prefer("select", "dplyr")
+# conflict_prefer("filter", "dplyr")
+
+# Now select() will always use dplyr version
+```
+
+## 1.4 Data Types and Structures
+
+### Understanding Basic Data Types
+
+```{r data_types}
+# Numeric
+x <- 42
+class(x)
+
+# Integer (explicitly)
+y <- 42L
+class(y)
+
+# Character
+name <- "John Doe"
+class(name)
+
+# Logical
+is_active <- TRUE
+class(is_active)
+
+# Factor (for categorical data)
+gender <- factor(c("M", "F", "M", "F"))
+class(gender)
+levels(gender)
+
+# Date
+today <- Sys.Date()
+class(today)
+
+# POSIXct (date-time)
+now <- Sys.time()
+class(now)
+
+# Check type
+typeof(x)
+mode(x)
+class(x)
+str(x)
+```
+
+### Data Structures
+
+```{r data_structures}
+# 1. VECTOR (1-dimensional, same type)
+vec_numeric <- c(1, 2, 3, 4, 5)
+vec_character <- c("a", "b", "c")
+vec_logical <- c(TRUE, FALSE, TRUE)
+
+# Named vectors
+ages <- c(John = 25, Jane = 30, Bob = 35)
+ages["John"]
+
+# 2. MATRIX (2-dimensional, same type)
+mat <- matrix(1:12, nrow = 3, ncol = 4)
+mat
+
+# Access elements
+mat[2, 3]     # Row 2, Column 3
+mat[2, ]      # All of row 2
+mat[, 3]      # All of column 3
+
+# 3. ARRAY (n-dimensional, same type)
+arr <- array(1:24, dim = c(3, 4, 2))
+
+# 4. LIST (can contain different types)
+my_list <- list(
+  numbers = 1:5,
+  text = "hello",
+  matrix = matrix(1:4, 2, 2),
+  nested = list(a = 1, b = 2)
+)
+
+# Access list elements
+my_list$numbers
+my_list[[1]]
+my_list[["numbers"]]
+
+# 5. DATA FRAME (2D, different types in columns)
+df <- data.frame(
+  id = 1:5,
+  name = c("Alice", "Bob", "Charlie", "David", "Eve"),
+  age = c(25, 30, 35, 40, 45),
+  active = c(TRUE, TRUE, FALSE, TRUE, FALSE)
+)
+
+str(df)
+```
+
+### Type Conversion Tricks
+
+```{r type_conversion}
+# Coercion hierarchy: logical < integer < numeric < character
+
+# Convert between types
+as.numeric("42")
+as.character(42)
+as.logical(1)  # 0 = FALSE, non-zero = TRUE
+
+# Factor to numeric (TRICKY!)
+f <- factor(c("10", "20", "30"))
+as.numeric(f)  # WRONG! Returns 1, 2, 3
+as.numeric(as.character(f))  # CORRECT! Returns 10, 20, 30
+
+# Quick conversion table
+conversion_examples <- data.frame(
+  Operation = c("String to Number", "Number to String", "Factor to Numeric"),
+  Code = c("as.numeric('42')", "as.character(42)", "as.numeric(as.character(f))"),
+  stringsAsFactors = FALSE
+)
+print(conversion_examples)
+```
+
+## 1.5 Control Structures and Functions
+
+### Conditional Statements
+
+```{r conditionals}
+# IF-ELSE
+x <- 10
+
+if (x > 5) {
+  print("x is greater than 5")
+} else if (x == 5) {
+  print("x equals 5")
+} else {
+  print("x is less than 5")
+}
+
+# Vectorized ifelse()
+values <- c(1, 5, 10, 15, 20)
+categories <- ifelse(values > 10, "High", "Low")
+categories
+
+# case_when() from dplyr (more readable for multiple conditions)
+library(dplyr)
+values_df <- data.frame(value = values)
+values_df %>%
+  mutate(category = case_when(
+    value < 5 ~ "Very Low",
+    value < 10 ~ "Low",
+    value < 15 ~ "Medium",
+    TRUE ~ "High"
+  ))
+```
+
+### Loops (When You Need Them)
+
+```{r loops}
+# FOR loop
+for (i in 1:5) {
+  print(paste("Iteration:", i))
+}
+
+# WHILE loop
+count <- 1
+while (count <= 5) {
+  print(paste("Count:", count))
+  count <- count + 1
+}
+
+# REPEAT loop (use with break)
+count <- 1
+repeat {
+  print(paste("Count:", count))
+  count <- count + 1
+  if (count > 5) break
+}
+
+#  BETTER: Use apply family instead of loops
+# apply(), lapply(), sapply(), mapply(), tapply()
+
+# Example: Calculate mean of each column
+df <- data.frame(
+  a = 1:5,
+  b = 6:10,
+  c = 11:15
+)
+
+# Using loop (slower)
+means <- numeric(ncol(df))
+for (i in 1:ncol(df)) {
+  means[i] <- mean(df[, i])
+}
+
+# Using apply (faster, cleaner)
+means <- apply(df, 2, mean)  # 2 = columns
+means
+
+# Using colMeans (even better!)
+colMeans(df)
+```
+
+### Writing Functions
+
+```{r functions}
+# Basic function
+calculate_bmi <- function(weight_kg, height_m) {
+  bmi <- weight_kg / (height_m^2)
+  return(bmi)
+}
+
+calculate_bmi(70, 1.75)
+
+# Function with default arguments
+greet <- function(name, greeting = "Hello") {
+  paste(greeting, name)
+}
+
+greet("Alice")
+greet("Bob", "Hi")
+
+# Function with multiple returns
+statistics <- function(x) {
+  result <- list(
+    mean = mean(x),
+    median = median(x),
+    sd = sd(x),
+    min = min(x),
+    max = max(x)
+  )
+  return(result)
+}
+
+stats <- statistics(1:100)
+stats$mean
+
+# Anonymous functions (lambda)
+sapply(1:5, function(x) x^2)
+
+#  NEW: Pipe-friendly functions with {}
+library(dplyr)
+mtcars %>%
+  {
+    data.frame(
+      mean_mpg = mean(.$mpg),
+      mean_hp = mean(.$hp)
+    )
+  }
+```
+
+### Debugging Tips
+
+```{r debugging, eval=FALSE}
+# Print debugging
+my_function <- function(x) {
+  print(paste("Input:", x))  # Debug print
+  result <- x * 2
+  print(paste("Result:", result))  # Debug print
+  return(result)
+}
+
+# Use browser() for interactive debugging
+my_function <- function(x) {
+  browser()  # Execution stops here
+  result <- x * 2
+  return(result)
+}
+
+# Use debug() to step through function
+debug(my_function)
+my_function(5)
+undebug(my_function)
+
+# Use traceback() after error
+# ... error occurs ...
+traceback()
+
+# Use try() and tryCatch() for error handling
+result <- try(log("not a number"), silent = TRUE)
+if (inherits(result, "try-error")) {
+  print("An error occurred!")
+}
+
+# Better error handling with tryCatch()
+safe_log <- function(x) {
+  tryCatch(
+    {
+      log(x)
+    },
+    error = function(e) {
+      message("Error: ", e$message)
+      return(NA)
+    },
+    warning = function(w) {
+      message("Warning: ", w$message)
+      return(log(x))
+    }
+  )
+}
+
+safe_log("abc")
+safe_log(-5)
+```
+
+---
+
+# 2. Data Handling: Import, Export, and Manipulation
+
+## 2.1 Reading Data from Various Sources
+
+### CSV and Text Files
+
+```{r read_csv, eval=FALSE}
+# Base R
+df_base <- read.csv("data/file.csv")
+df_base <- read.csv("data/file.csv", 
+                    header = TRUE,
+                    sep = ",",
+                    stringsAsFactors = FALSE)
+
+# readr (tidyverse - FASTER and better defaults)
+library(readr)
+df <- read_csv("data/file.csv")  # Better than read.csv()
+df <- read_tsv("data/file.txt")  # Tab-separated
+df <- read_delim("data/file.txt", delim = "|")  # Custom delimiter
+
+# Read from URL
+url <- "https://raw.githubusercontent.com/datasets/covid-19/master/data/countries-aggregated.csv"
+df_url <- read_csv(url)
+
+# Read with column specifications
+df <- read_csv("data/file.csv",
+               col_types = cols(
+                 id = col_integer(),
+                 name = col_character(),
+                 date = col_date(format = "%Y-%m-%d"),
+                 value = col_double()
+               ))
+
+# Skip rows
+df <- read_csv("data/file.csv", skip = 2)
+
+# Read only first n rows
+df <- read_csv("data/file.csv", n_max = 1000)
+```
+
+### Excel Files
+
+```{r read_excel, eval=FALSE}
+# readxl package (part of tidyverse)
+library(readxl)
+
+# Read first sheet
+df <- read_excel("data/file.xlsx")
+
+# Read specific sheet
+df <- read_excel("data/file.xlsx", sheet = "Sheet2")
+df <- read_excel("data/file.xlsx", sheet = 2)
+
+# List all sheets
+excel_sheets("data/file.xlsx")
+
+# Read all sheets at once
+file_path <- "data/file.xlsx"
+all_sheets <- excel_sheets(file_path)
+data_list <- lapply(all_sheets, function(x) read_excel(file_path, sheet = x))
+names(data_list) <- all_sheets
+
+# Read specific range
+df <- read_excel("data/file.xlsx", range = "A1:D10")
+
+# Writing Excel files (openxlsx package)
+library(openxlsx)
+write.xlsx(df, "output/file.xlsx")
+
+# Write multiple sheets
+write.xlsx(list(Sheet1 = df1, Sheet2 = df2), "output/file.xlsx")
+```
+
+### Database Connections
+
+```{r read_database, eval=FALSE}
+# SQLite
+library(RSQLite)
+con <- dbConnect(SQLite(), "data/database.sqlite")
+df <- dbReadTable(con, "table_name")
+
+# SQL query
+df <- dbGetQuery(con, "SELECT * FROM table_name WHERE value > 100")
+
+# Close connection
+dbDisconnect(con)
+
+# PostgreSQL
+library(RPostgreSQL)
+con <- dbConnect(PostgreSQL(),
+                 dbname = "mydb",
+                 host = "localhost",
+                 port = 5432,
+                 user = "username",
+                 password = "password")
+
+# MySQL
+library(RMySQL)
+con <- dbConnect(MySQL(),
+                 dbname = "mydb",
+                 host = "localhost",
+                 user = "username",
+                 password = "password")
+
+# Generic DBI interface
+library(DBI)
+df <- dbReadTable(con, "table_name")
+dbWriteTable(con, "new_table", df)
+```
+
+### Other Formats
+
+```{r read_other, eval=FALSE}
+# JSON
+library(jsonlite)
+df <- fromJSON("data/file.json")
+data_list <- fromJSON("data/file.json", simplifyDataFrame = FALSE)
+
+# XML
+library(XML)
+doc <- xmlParse("data/file.xml")
+df <- xmlToDataFrame(doc)
+
+# SPSS, SAS, Stata (haven package)
+library(haven)
+df_spss <- read_sav("data/file.sav")    # SPSS
+df_sas <- read_sas("data/file.sas7bdat")  # SAS
+df_stata <- read_dta("data/file.dta")   # Stata
+
+# RDS (R native format - FAST!)
+saveRDS(df, "data/file.rds")
+df <- readRDS("data/file.rds")
+
+# RData (multiple objects)
+save(df1, df2, df3, file = "data/workspace.RData")
+load("data/workspace.RData")
+
+# feather (fast format for Python/R)
+library(feather)
+write_feather(df, "data/file.feather")
+df <- read_feather("data/file.feather")
+
+# parquet (columnar format)
+library(arrow)
+write_parquet(df, "data/file.parquet")
+df <- read_parquet("data/file.parquet")
+```
+
+## 2.2 Data Manipulation with dplyr
+
+### Essential dplyr Verbs
+
+```{r dplyr_basics}
+library(dplyr)
+
+# Sample data
+data("mtcars")
+df <- mtcars
+
+# 1. SELECT - Choose columns
+df %>% select(mpg, cyl, hp)
+df %>% select(starts_with("c"))
+df %>% select(ends_with("p"))
+df %>% select(contains("a"))
+df %>% select(mpg:hp)  # Range
+df %>% select(-c(mpg, cyl))  # Exclude columns
+
+# Helper functions
+df %>% select(where(is.numeric))
+df %>% select(everything())  # All columns
+
+# 2. FILTER - Choose rows
+df %>% filter(mpg > 20)
+df %>% filter(mpg > 20 & cyl == 4)
+df %>% filter(mpg > 20 | cyl == 4)
+df %>% filter(cyl %in% c(4, 6))
+df %>% filter(between(mpg, 15, 25))
+
+# 3. MUTATE - Create/modify columns
+df %>%
+  mutate(
+    mpg_per_cyl = mpg / cyl,
+    hp_category = ifelse(hp > 150, "High", "Low")
+  )
+
+# 4. ARRANGE - Sort rows
+df %>% arrange(mpg)  # Ascending
+df %>% arrange(desc(mpg))  # Descending
+df %>% arrange(cyl, desc(mpg))  # Multiple columns
+
+# 5. SUMMARISE - Aggregate data
+df %>%
+  summarise(
+    mean_mpg = mean(mpg),
+    median_mpg = median(mpg),
+    sd_mpg = sd(mpg),
+    n = n()
+  )
+
+# 6. GROUP_BY - Group operations
+df %>%
+  group_by(cyl) %>%
+  summarise(
+    mean_mpg = mean(mpg),
+    mean_hp = mean(hp),
+    count = n()
+  )
+
+# 7. DISTINCT - Unique rows
+df %>% distinct(cyl)
+df %>% distinct(cyl, gear)
+
+# 8. SLICE - Select rows by position
+df %>% slice(1:5)
+df %>% slice_head(n = 5)
+df %>% slice_tail(n = 5)
+df %>% slice_max(mpg, n = 5)
+df %>% slice_sample(n = 5)
+```
+
+### Advanced dplyr Techniques
+
+```{r dplyr_advanced}
+# Rename columns
+df %>% rename(miles_per_gallon = mpg)
+
+# Relocate columns
+df %>% relocate(hp, .before = mpg)
+df %>% relocate(cyl, .after = last_col())
+
+# Count occurrences
+df %>% count(cyl)
+df %>% count(cyl, gear)
+
+# Add row numbers
+df %>% mutate(row_id = row_number())
+
+# Cumulative operations
+df %>%
+  arrange(mpg) %>%
+  mutate(
+    cumsum_mpg = cumsum(mpg),
+    rank_mpg = min_rank(mpg),
+    percent_rank_mpg = percent_rank(mpg)
+  )
+
+# Window functions
+df %>%
+  group_by(cyl) %>%
+  mutate(
+    mpg_rank_in_group = rank(mpg),
+    mpg_vs_group_mean = mpg - mean(mpg)
+  )
+
+# Multiple summaries
+df %>%
+  group_by(cyl) %>%
+  summarise(
+    across(c(mpg, hp), list(mean = mean, sd = sd))
+  )
+
+# Conditional mutations
+df %>%
+  mutate(
+    efficiency = case_when(
+      mpg > 25 ~ "High",
+      mpg > 20 ~ "Medium",
+      mpg > 15 ~ "Low",
+      TRUE ~ "Very Low"
+    )
+  )
+```
+
+### Joining Data
+
+```{r joins}
+# Sample data
+customers <- data.frame(
+  id = 1:5,
+  name = c("Alice", "Bob", "Charlie", "David", "Eve")
+)
+
+orders <- data.frame(
+  order_id = 1:6,
+  customer_id = c(1, 1, 2, 3, 3, 6),
+  amount = c(100, 150, 200, 50, 75, 300)
+)
+
+# INNER JOIN - Only matching rows
+inner_join(customers, orders, by = c("id" = "customer_id"))
+
+# LEFT JOIN - All from left, matching from right
+left_join(customers, orders, by = c("id" = "customer_id"))
+
+# RIGHT JOIN - All from right, matching from left
+right_join(customers, orders, by = c("id" = "customer_id"))
+
+# FULL JOIN - All rows from both
+full_join(customers, orders, by = c("id" = "customer_id"))
+
+# ANTI JOIN - Rows in left NOT in right
+anti_join(customers, orders, by = c("id" = "customer_id"))
+
+# SEMI JOIN - Rows in left that have match in right
+semi_join(customers, orders, by = c("id" = "customer_id"))
+```
+
+## 2.3 Data Cleaning Tricks
+
+### Handling Missing Values
+
+```{r missing_values}
+# Create sample data with missing values
+library(tidyr)
+df <- data.frame(
+  id = 1:10,
+  value1 = c(1, 2, NA, 4, 5, NA, 7, 8, 9, 10),
+  value2 = c(NA, 2, 3, NA, 5, 6, 7, NA, 9, 10)
+)
+
+# Check for missing values
+sum(is.na(df))
+colSums(is.na(df))
+complete.cases(df)
+
+# Remove rows with ANY missing values
+df %>% na.omit()
+df %>% filter(complete.cases(.))
+
+# Remove rows with missing in specific column
+df %>% filter(!is.na(value1))
+
+# Replace NA with value
+df %>% 
+  mutate(value1 = replace_na(value1, 0))
+
+# Replace NA with mean
+df %>%
+  mutate(value1 = ifelse(is.na(value1), mean(value1, na.rm = TRUE), value1))
+
+# Fill NA with previous/next value
+df %>%
+  tidyr::fill(value1, .direction = "down")
+
+# Count missing by group
+df %>%
+  group_by(id %% 2) %>%
+  summarise(
+    missing_value1 = sum(is.na(value1)),
+    missing_value2 = sum(is.na(value2))
+  )
+```
+
+### Handling Duplicates
+
+```{r duplicates}
+# Create data with duplicates
+df <- data.frame(
+  id = c(1, 2, 2, 3, 4, 4, 4),
+  name = c("A", "B", "B", "C", "D", "D", "D"),
+  value = c(10, 20, 20, 30, 40, 40, 45)
+)
+
+# Find duplicates
+df %>% filter(duplicated(.) | duplicated(., fromLast = TRUE))
+
+# Remove duplicates (keep first)
+df %>% distinct()
+
+# Remove based on specific columns
+df %>% distinct(id, name, .keep_all = TRUE)
+
+# Keep row with max value per group
+df %>%
+  group_by(id, name) %>%
+  slice_max(value, n = 1) %>%
+  ungroup()
+```
+
+### String Cleaning
+
+```{r string_cleaning}
+library(stringr)
+
+# Sample messy data
+text <- c("  Hello World  ", "UPPER case", "under_score", "123-456")
+
+# Trim whitespace
+str_trim(text)
+
+# Change case
+str_to_lower(text)
+str_to_upper(text)
+str_to_title(text)
+
+# Replace patterns
+str_replace(text, " ", "_")
+str_replace_all(text, "[0-9]", "X")
+
+# Extract patterns
+str_extract(text, "[0-9]+")
+str_extract_all(text, "[0-9]")
+
+# Detect patterns
+str_detect(text, "[0-9]")
+
+# Split strings
+str_split(text, " ")
+
+# Concatenate
+str_c(text, collapse = " | ")
+paste(text, collapse = " | ")
+paste0("ID_", 1:4)  # No separator
+```
+
+## 2.4 Exporting Data
+
+### Writing Files
+
+```{r export_data, eval=FALSE}
+# CSV
+write.csv(df, "output/file.csv", row.names = FALSE)
+write_csv(df, "output/file.csv")  # readr version (faster)
+
+# Excel
+library(openxlsx)
+write.xlsx(df, "output/file.xlsx")
+
+# Multiple sheets
+write.xlsx(list(Sheet1 = df1, Sheet2 = df2), "output/file.xlsx")
+
+# RDS (recommended for R-to-R)
+saveRDS(df, "output/file.rds")
+
+# RData (multiple objects)
+save(df1, df2, df3, file = "output/workspace.RData")
+
+# Tab-separated
+write.table(df, "output/file.txt", sep = "\t", row.names = FALSE)
+
+# JSON
+library(jsonlite)
+write_json(df, "output/file.json")
+
+# Parquet (efficient for large data)
+library(arrow)
+write_parquet(df, "output/file.parquet")
+```
+
+---
+
+# 3. Big Data Handling Techniques
+
+## 3.1 Memory Management
+
+### Understanding Memory Usage
+
+```{r memory_management}
+# Check object size
+object.size(mtcars)
+print(object.size(mtcars), units = "Kb")
+
+# List all objects and their sizes
+sort(sapply(ls(), function(x) object.size(get(x))), decreasing = TRUE)
+
+# Remove objects
+rm(large_object)
+
+# Clear workspace
+# rm(list = ls())  # Use with caution!
+
+# Garbage collection (free up memory)
+gc()
+
+# Check memory limit
+memory.limit()  # Windows only
+```
+
+### Memory-Efficient Data Types
+
+```{r memory_efficient}
+# Use appropriate data types
+# Character uses more memory than factor (for categorical data)
+
+# Bad: Character
+vec_char <- rep(c("A", "B", "C"), 1000)
+object.size(vec_char)
+
+# Good: Factor
+vec_factor <- factor(rep(c("A", "B", "C"), 1000))
+object.size(vec_factor)
+
+# Integer vs Numeric
+vec_numeric <- 1:10000  # Actually integer
+object.size(vec_numeric)
+
+vec_numeric2 <- as.numeric(1:10000)  # Actual numeric
+object.size(vec_numeric2)
+
+# Use bit64 for large integers
+library(bit64)
+large_integers <- as.integer64(1:1000)
+```
+
+## 3.2 Working with Large Files
+
+### Chunked Reading
+
+```{r chunked_reading, eval=FALSE}
+# Read in chunks using readr
+library(readr)
+
+# Define chunk size
+chunk_size <- 10000
+
+# Read and process in chunks
+process_chunk <- function(chunk, pos) {
+  # Your processing here
+  summarised <- chunk %>%
+    group_by(category) %>%
+    summarise(mean_value = mean(value))
+  return(summarised)
+}
+
+# Read file in chunks
+results <- read_csv_chunked(
+  "data/large_file.csv",
+  callback = DataFrameCallback$new(process_chunk),
+  chunk_size = chunk_size
+)
+
+# Alternative: readr with callback
+f <- function(x, pos) {
+  subset(x, value > 100)
+}
+large_subset <- read_csv_chunked("data/large_file.csv", 
+                                  DataFrameCallback$new(f),
+                                  chunk_size = 10000)
+```
+
+### Using data.table for Speed
+
+```{r datatable}
+library(data.table)
+
+# Create sample data
+set.seed(123)
+dt <- data.table(
+  id = 1:1000000,
+  group = sample(LETTERS[1:5], 1000000, replace = TRUE),
+  value = rnorm(1000000)
+)
+
+# Fast subsetting (by reference)
+dt[value > 0]
+
+# Fast aggregation
+dt[, .(mean_value = mean(value)), by = group]
+
+# Multiple aggregations
+dt[, .(mean_val = mean(value),
+       sd_val = sd(value),
+       count = .N), 
+   by = group]
+
+# Update by reference (no copy!)
+dt[, new_column := value * 2]
+
+# Conditional update
+dt[value > 0, category := "positive"]
+dt[value <= 0, category := "non-positive"]
+
+# Remove column
+dt[, category := NULL]
+
+# Chaining operations
+dt[value > 0][order(-value)][, .(id, value)]
+
+# Set key for fast joins
+setkey(dt, group)
+
+# Fast merge
+dt2 <- data.table(
+  group = LETTERS[1:5],
+  group_name = paste("Group", LETTERS[1:5])
+)
+setkey(dt2, group)
+merged <- dt[dt2]
+```
+
+### Using Arrow for Large Files
+
+```{r arrow, eval=FALSE}
+library(arrow)
+library(dplyr)
+
+# Read parquet file (doesn't load into memory)
+dataset <- open_dataset("data/large_file.parquet")
+
+# Query without loading full data
+result <- dataset %>%
+  filter(value > 100) %>%
+  group_by(category) %>%
+  summarise(mean_value = mean(value)) %>%
+  collect()  # Only now is data loaded
+
+# Read multiple parquet files as one dataset
+dataset <- open_dataset("data/partitioned_data/")
+
+# Write partitioned parquet
+df %>%
+  group_by(year, month) %>%
+  write_dataset("data/partitioned_data/", format = "parquet")
+```
+
+## 3.3 Parallel Processing
+
+### Using parallel Package
+
+```{r parallel_processing, eval=FALSE}
+library(parallel)
+
+# Detect number of cores
+num_cores <- detectCores()
+print(paste("Available cores:", num_cores))
+
+# Create cluster
+cl <- makeCluster(num_cores - 1)  # Leave one core free
+
+# Parallel lapply
+results <- parLapply(cl, 1:1000, function(x) {
+  # Your computation here
+  x^2
+})
+
+# Stop cluster when done
+stopCluster(cl)
+
+# Using mclapply (Unix/Mac only)
+results <- mclapply(1:1000, function(x) x^2, mc.cores = num_cores - 1)
+
+# Example: Parallel data processing
+library(doParallel)
+registerDoParallel(cores = num_cores - 1)
+
+library(foreach)
+results <- foreach(i = 1:1000, .combine = rbind) %dopar% {
+  # Your processing
+  data.frame(id = i, result = i^2)
+}
+
+stopImplicitCluster()
+```
+
+### Using furrr for Parallel purrr
+
+```{r furrr, eval=FALSE}
+library(furrr)
+library(purrr)
+
+# Setup parallel processing
+plan(multisession, workers = 4)
+
+# Regular purrr
+result_sequential <- map(1:100, ~ slow_function(.x))
+
+# Parallel purrr
+result_parallel <- future_map(1:100, ~ slow_function(.x))
+
+# With progress bar
+result_parallel <- future_map(1:100, ~ slow_function(.x), .progress = TRUE)
+```
+
+## 3.4 Database-like Operations
+
+### Using dbplyr
+
+```{r dbplyr, eval=FALSE}
+library(dbplyr)
+library(RSQLite)
+
+# Connect to database
+con <- dbConnect(SQLite(), "data/large_database.sqlite")
+
+# Create lazy table reference
+db_table <- tbl(con, "large_table")
+
+# All operations are lazy (not executed until needed)
+result <- db_table %>%
+  filter(value > 100) %>%
+  group_by(category) %>%
+  summarise(mean_value = mean(value))
+
+# View SQL query that will be generated
+show_query(result)
+
+# Execute and collect results
+final_result <- collect(result)
+
+# Close connection
+dbDisconnect(con)
+```
+
+---
+
+# 4. Data Visualization Tricks
+
+## 4.1 ggplot2 Essentials
+
+### Basic ggplot2 Structure
+
+```{r ggplot_basics}
+library(ggplot2)
+
+# Basic template
+# ggplot(data, aes(x, y, ...)) + geom_*() + ...
+
+# Scatter plot
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point()
+
+# With color
+ggplot(mtcars, aes(x = wt, y = mpg, color = factor(cyl))) +
+  geom_point(size = 3) +
+  labs(title = "Fuel Efficiency vs Weight",
+       x = "Weight (1000 lbs)",
+       y = "Miles Per Gallon",
+       color = "Cylinders")
+
+# Line plot
+ggplot(economics, aes(x = date, y = unemploy)) +
+  geom_line(color = "blue", size = 1) +
+  theme_minimal()
+
+# Bar plot
+ggplot(mtcars, aes(x = factor(cyl))) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Count by Cylinder", x = "Cylinders", y = "Count")
+
+# Histogram
+ggplot(mtcars, aes(x = mpg)) +
+  geom_histogram(bins = 10, fill = "darkgreen", color = "white") +
+  theme_classic()
+
+# Box plot
+ggplot(mtcars, aes(x = factor(cyl), y = mpg)) +
+  geom_boxplot(fill = "lightblue") +
+  geom_jitter(width = 0.2, alpha = 0.3)
+```
+
+### Advanced ggplot2 Tricks
+
+```{r ggplot_advanced}
+library(dplyr)
+
+# Multiple geoms
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point(aes(color = factor(cyl)), size = 3) +
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  theme_minimal() +
+  labs(title = "MPG vs Weight with Linear Trend")
+
+# Faceting
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() +
+  facet_wrap(~ cyl) +
+  theme_bw()
+
+# Custom themes
+custom_theme <- theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+ggplot(mtcars, aes(x = wt, y = mpg, color = factor(cyl))) +
+  geom_point(size = 3) +
+  custom_theme
+
+# Color palettes
+library(viridis)
+ggplot(mtcars, aes(x = wt, y = mpg, color = hp)) +
+  geom_point(size = 4) +
+  scale_color_viridis_c() +
+  theme_dark()
+
+# Annotations
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() +
+  annotate("text", x = 4, y = 30, label = "Annotation", size = 5) +
+  annotate("rect", xmin = 3, xmax = 4, ymin = 25, ymax = 30, 
+           alpha = 0.2, fill = "red")
+
+# Coordinates
+ggplot(mtcars, aes(x = factor(cyl), fill = factor(gear))) +
+  geom_bar() +
+  coord_polar()  # Pie-like chart
+
+# Scales
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point() +
+  scale_x_continuous(breaks = seq(0, 6, 1)) +
+  scale_y_continuous(trans = "log10")
+```
+
+### Quick Plotting Tips
+
+```{r plot_tips}
+# Ensure the output directory exists
+if (!dir.exists("output")) {
+  dir.create("output", recursive = TRUE)
+}
+
+# Save the last plot
+ggsave("output/my_plot.png", width = 8, height = 6, dpi = 300)
+
+# Save a specific plot
+p <- ggplot(mtcars, aes(x = wt, y = mpg)) + geom_point()
+ggsave("output/specific_plot.png", plot = p, width = 10, height = 6)
+
+# Combine plots using patchwork
+library(patchwork)
+
+p1 <- ggplot(mtcars, aes(x = wt, y = mpg)) + geom_point()
+p2 <- ggplot(mtcars, aes(x = hp, y = mpg)) + geom_point()
+p3 <- ggplot(mtcars, aes(x = factor(cyl))) + geom_bar()
+
+# Side by side
+p1 + p2
+
+# Stacked
+p1 / p2
+
+# Complex layout
+(p1 | p2) / p3
+
+```
+
+## 4.2 Interactive Visualizations
+
+### plotly
+
+```{r plotly, eval=FALSE}
+library(plotly)
+
+# Convert ggplot to plotly
+p <- ggplot(mtcars, aes(x = wt, y = mpg, color = factor(cyl))) +
+  geom_point(size = 3)
+
+ggplotly(p)
+
+# Native plotly
+plot_ly(mtcars, x = ~wt, y = ~mpg, type = "scatter", mode = "markers",
+        color = ~factor(cyl), size = ~hp)
+
+# 3D scatter
+plot_ly(mtcars, x = ~wt, y = ~hp, z = ~mpg, 
+        type = "scatter3d", mode = "markers",
+        color = ~factor(cyl))
+```
+
+### Other Visualization Packages
+
+```{r other_viz, eval=FALSE}
+# highcharter
+library(highcharter)
+hchart(mtcars, "scatter", hcaes(x = wt, y = mpg, group = cyl))
+
+# echarts4r
+library(echarts4r)
+mtcars %>%
+  e_charts(wt) %>%
+  e_scatter(mpg) %>%
+  e_title("MPG vs Weight")
+
+# ggvis (interactive ggplot-like)
+library(ggvis)
+mtcars %>%
+  ggvis(~wt, ~mpg) %>%
+  layer_points(fill = ~factor(cyl))
+```
+
+---
+
+# 5. Time Series Data Handling
+
+## 5.1 Time Series Basics
+
+
+### Lubridate for Date Manipulation
+
+```{r lubridate_tricks}
+library(lubridate)
+
+# Parsing dates
+ymd("2023-01-15")
+mdy("01/15/2023")
+dmy("15-01-2023")
+
+# Date-time
+ymd_hms("2023-01-15 14:30:00")
+
+# Extract components
+date <- ymd("2023-01-15")
+year(date)
+month(date)
+day(date)
+wday(date, label = TRUE)
+quarter(date)
+
+# Date arithmetic
+date + days(10)
+date + months(2)
+date + years(1)
+
+# Intervals
+interval(ymd("2023-01-01"), ymd("2023-12-31"))
+
+# Durations
+duration(5, "days")
+ddays(5)
+dweeks(2)
+
+# Periods
+period(5, "days")
+days(5)
+weeks(2)
+
+# Time zones
+with_tz(now(), "America/New_York")
+force_tz(now(), "America/New_York")
+
+# Floor/ceiling dates
+floor_date(date, "month")
+ceiling_date(date, "month")
+round_date(date, "month")
+```
+
+
+## 5.2 Time Series Visualization
+
+```{r ts_visualization}
+library(ggplot2)
+library(dygraphs)
+
+# --------------------------
+# Create example ts data
+# --------------------------
+set.seed(123)
+dates <- seq(as.Date("2020-01-01"), as.Date("2020-12-31"), by = "day")
+values <- cumsum(rnorm(length(dates)))
+
+# Base R ts object for the first year
+ts_data <- ts(values[1:365], start = c(2020, 1), frequency = 365)
+
+
+library(zoo)
+
+zoo_ts <- zoo(ts_data)
+ts_df <- data.frame(
+  date = index(zoo_ts),
+  value = coredata(zoo_ts)
+)
+
+library(ggplot2)
+ggplot(ts_df, aes(x = date, y = value)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Time Series Plot")
+
+```
+
+## 5.3 Time Series Analysis
+
+### Decomposition
+
+```{r ts_decomposition}
+# Create seasonal time series
+monthly_ts <- ts(rnorm(120) + 1:120/10 + sin(2*pi*(1:120)/12), 
+                 start = c(2015, 1), frequency = 12)
+
+# Decompose
+decomposed <- decompose(monthly_ts)
+plot(decomposed)
+
+# STL decomposition (more robust)
+stl_result <- stl(monthly_ts, s.window = "periodic")
+plot(stl_result)
+```
+
+### Forecasting Basics
+
+```{r forecasting, eval=FALSE}
+library(forecast)
+
+# Auto ARIMA
+fit <- auto.arima(monthly_ts)
+forecasted <- forecast(fit, h = 12)  # 12 months ahead
+plot(forecasted)
+
+# Exponential smoothing
+fit_ets <- ets(monthly_ts)
+forecasted_ets <- forecast(fit_ets, h = 12)
+plot(forecasted_ets)
+
+# Accuracy
+accuracy(fit)
+```
+
+---
+
+# 6. Geospatial Data Handling Tips
+
+## 6.1 Quick Geospatial Tricks
+
+### Essential sf Operations
+
+```{r geospatial_tricks, eval=FALSE}
+# Load required libraries
+library(sf)
+library(dplyr)
+library(spData)  # example spatial datasets
+
+# --------------------------
+# Use built-in example dataset
+# --------------------------
+sf_data <- world          # 'world' dataset from spData
+sf_data <- st_as_sf(sf_data)  # ensure it's an sf object
+
+# Quick plot
+plot(st_geometry(sf_data))
+
+# --------------------------
+# Buffer example (in meters if projected)
+# --------------------------
+# Transform to a projected CRS for meters
+sf_proj <- st_transform(sf_data, crs = 3857)
+buffered <- st_buffer(sf_proj, dist = 1000000)  # 1,000 km buffer
+
+# Plot buffered geometry
+plot(st_geometry(buffered))
+
+# --------------------------
+# Intersection example
+# --------------------------
+# Let's intersect two countries as example
+other_sf <- sf_data %>% filter(name_long %in% c("France", "Germany"))
+overlap <- st_intersection(other_sf, other_sf)  # self-intersection just as demo
+plot(st_geometry(overlap), col = "red")
+
+# --------------------------
+# Distance matrix
+# --------------------------
+distances <- st_distance(sf_proj[1:5, ])  # only first 5 for simplicity
+print(distances)
+
+# --------------------------
+# Centroid
+# --------------------------
+centroids <- st_centroid(sf_proj)
+plot(st_geometry(centroids), col = "blue", pch = 16, add = TRUE)
+
+# --------------------------
+# Area (in projected CRS!)
+# --------------------------
+areas <- st_area(sf_proj)
+head(areas)
+
+# --------------------------
+# Nearest feature
+# --------------------------
+# Example: find nearest neighbor for first 5 countries
+nearest <- st_nearest_feature(sf_proj[1:5, ], sf_proj[6:10, ])
+print(nearest)
+
+```
+
+### Quick Mapping
+
+```{r quick_maps, eval=FALSE}
+library(mapview)
+library(leaflet)
+
+# Instant interactive map
+mapview(sf_data)
+
+
+
+# Leaflet
+leaflet(sf_data) %>%
+  addTiles() %>%
+  addPolygons(fillColor = "blue", weight = 1)
+```
+
+## 6.2 Raster Tips
+
+```{r raster_tips, eval=FALSE}
+# Load libraries
+library(terra)
+library(sf)
+library(dplyr)
+
+# ---------------------
+# Load example raster
+# ---------------------
+# Get the path for the included example raster file
+elev_path <- system.file("raster/elev.tif", package = "spData")
+
+# Check that file exists
+if (elev_path == "") {
+  stop("Example raster not found – install 'spData' and ensure it is up to date.")
+}
+
+# Read raster as terra SpatRaster
+r <- rast(elev_path)
+
+# Quick plot
+plot(r, main = "Example Elevation Raster")
+
+# ---------------------
+# Extract raster values at points
+# ---------------------
+points_sf <- st_as_sf(
+  data.frame(lon = c(-0.1, 2.3), lat = c(51.5, 48.8)),
+  coords = c("lon", "lat"),
+  crs = 4326
+)
+
+# Convert sf to terra vector
+points_vect <- vect(points_sf)
+
+# Extract raster values at those points
+extracted <- terra::extract(r, points_vect)
+print(extracted)
+
+# ---------------------
+# Raster calculator
+# ---------------------
+r2 <- r * 2 + 100
+plot(r2, main = "Raster Calculator")
+
+# ---------------------
+# Aggregate (coarser resolution)
+# ---------------------
+r_coarse <- aggregate(r, fact = 5, fun = mean)
+plot(r_coarse, main = "Aggregated Raster")
+
+# ---------------------
+# Resample raster
+# ---------------------
+r_resample <- resample(r, r_coarse, method = "bilinear")
+plot(r_resample, main = "Resampled Raster")
+
+
+```
+
+---
+
+# 7. Shiny Apps Basics
+
+## 7.1 Shiny App Structure
+
+### Minimal Shiny App
+
+```{r shiny_basic, eval=FALSE}
+library(shiny)
+
+# UI
+ui <- fluidPage(
+  titlePanel("My First Shiny App"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("bins", "Number of bins:", 
+                  min = 5, max = 50, value = 30)
+    ),
+    
+    mainPanel(
+      plotOutput("distPlot")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  output$distPlot <- renderPlot({
+    x <- faithful$waiting
+    bins <- seq(min(x), max(x), length.out = input$bins + 1)
+    hist(x, breaks = bins, col = "darkgray", border = "white",
+         xlab = "Waiting time to next eruption (in mins)",
+         main = "Histogram of waiting times")
+  })
+}
+
+# Run app
+shinyApp(ui = ui, server = server)
+```
+
+### Input/Output Widgets
+
+```{r shiny_widgets, eval=FALSE}
+# UI inputs
+sliderInput("slider", "Slider:", min = 0, max = 100, value = 50)
+numericInput("number", "Number:", value = 10)
+textInput("text", "Text:", value = "Enter text")
+selectInput("select", "Select:", choices = c("A", "B", "C"))
+checkboxInput("checkbox", "Checkbox", value = TRUE)
+dateInput("date", "Date:")
+fileInput("file", "Choose file")
+
+# Outputs
+plotOutput("plot")
+tableOutput("table")
+textOutput("text")
+verbatimTextOutput("code")
+uiOutput("ui")
+```
+
+## 7.2 Reactive Programming
+
+### Basic Reactivity
+
+```{r reactivity, eval=FALSE}
+server <- function(input, output) {
+  
+  # Reactive expression (computed once per change)
+  data_filtered <- reactive({
+    mtcars %>% filter(cyl == input$cyl)
+  })
+  
+  # Use reactive data
+  output$plot <- renderPlot({
+    ggplot(data_filtered(), aes(x = wt, y = mpg)) + geom_point()
+  })
+  
+  output$table <- renderTable({
+    data_filtered()
+  })
+  
+  # Observe (side effects only)
+  observe({
+    print(paste("Cylinders selected:", input$cyl))
+  })
+  
+  # observeEvent (react to specific input)
+  observeEvent(input$button, {
+    showModal(modalDialog("Button clicked!"))
+  })
+}
+```
+
+## 7.3 Shiny Dashboard
+
+```{r shinydashboard, eval=FALSE}
+library(shinydashboard)
+
+ui <- dashboardPage(
+  dashboardHeader(title = "My Dashboard"),
+  
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
+      menuItem("Data", tabName = "data", icon = icon("table"))
+    )
+  ),
+  
+  dashboardBody(
+    tabItems(
+      tabItem(tabName = "dashboard",
+              fluidRow(
+                valueBoxOutput("value1"),
+                valueBoxOutput("value2")
+              ),
+              fluidRow(
+                box(plotOutput("plot1"), width = 6),
+                box(plotOutput("plot2"), width = 6)
+              )
+      ),
+      
+      tabItem(tabName = "data",
+              fluidRow(
+                box(tableOutput("table"), width = 12)
+              )
+      )
+    )
+  )
+)
+
+server <- function(input, output) {
+  output$value1 <- renderValueBox({
+    valueBox(nrow(mtcars), "Total Cars", icon = icon("car"))
+  })
+  
+  output$plot1 <- renderPlot({
+    ggplot(mtcars, aes(x = wt, y = mpg)) + geom_point()
+  })
+  
+  output$table <- renderTable({
+    head(mtcars)
+  })
+}
+
+shinyApp(ui, server)
+```
+
+## 7.4 Shiny Tips and Tricks
+
+```{r shiny_tips, eval=FALSE}
+# 1. Use isolate() to prevent reactivity
+output$plot <- renderPlot({
+  # Only reacts to input$update, not input$bins
+  input$update
+  isolate({
+    hist(rnorm(100), breaks = input$bins)
+  })
+})
+
+# 2. Use eventReactive() for better control
+data_processed <- eventReactive(input$go_button, {
+  # Only runs when button is clicked
+  process_data(input$data)
+})
+
+# 3. Use req() to prevent errors
+output$plot <- renderPlot({
+  req(input$file)  # Don't run if file not uploaded
+  data <- read.csv(input$file$datapath)
+  plot(data)
+})
+
+# 4. Use validate() for custom error messages
+output$plot <- renderPlot({
+  validate(
+    need(input$data != "", "Please upload data"),
+    need(nrow(input$data) > 10, "Need at least 10 rows")
+  )
+  plot(input$data)
+})
+
+# 5. Use updateInput() to change inputs from server
+observeEvent(input$reset, {
+  updateSliderInput(session, "bins", value = 30)
+  updateTextInput(session, "text", value = "")
+})
+
+# 6. Use downloadHandler for file downloads
+output$download <- downloadHandler(
+  filename = function() {
+    paste("data-", Sys.Date(), ".csv", sep = "")
+  },
+  content = function(file) {
+    write.csv(data(), file, row.names = FALSE)
+  }
+)
+
+# 7. Use shinyjs for JavaScript interactions
+library(shinyjs)
+useShinyjs()  # In UI
+onclick("button", alert("Clicked!"))
+hide("element")
+show("element")
+```
+
+---
+
+# 8. Performance Optimization Tips
+
+## 8.1 Code Profiling
+
+```{r profiling, eval=FALSE}
+# Profile code execution time
+library(profvis)
+
+profvis({
+  # Your code here
+  x <- numeric(1000)
+  for(i in 1:1000) {
+    x[i] <- i^2
+  }
+})
+
+# Benchmark alternatives
+library(microbenchmark)
+
+microbenchmark(
+  loop = {
+    x <- numeric(1000)
+    for(i in 1:1000) x[i] <- i^2
+  },
+  vectorized = {
+    x <- (1:1000)^2
+  },
+  times = 100
+)
+```
+
+## 8.2 Vectorization Tricks
+
+```{r vectorization}
+# Always prefer vectorized operations
+
+# BAD - Loop
+result <- numeric(1000)
+for(i in 1:1000) {
+  result[i] <- sqrt(i)
+}
+
+# GOOD - Vectorized
+result <- sqrt(1:1000)
+
+# Use apply family
+mat <- matrix(1:12, 3, 4)
+apply(mat, 2, sum)  # Column sums
+colSums(mat)  # Even faster!
+
+# Use ifelse instead of if-else in loops
+x <- 1:10
+ifelse(x > 5, "High", "Low")
+```
+
+## 8.3 Compilation
+
+```{r compilation, eval=FALSE}
+# Use compiler package
+library(compiler)
+
+# Compile function
+my_func <- function(n) {
+  result <- 0
+  for(i in 1:n) result <- result + i
+  result
+}
+
+my_func_compiled <- cmpfun(my_func)
+
+# Test speed
+microbenchmark(
+  original = my_func(10000),
+  compiled = my_func_compiled(10000),
+  times = 100
+)
+```
+
+---
+
+# 9. Best Practices Summary
+
+## 9.1 Project Organization
+
+```
+my_project/
+│
+├── README.md                 # Project overview
+├── my_project.Rproj         # RStudio project file
+│
+├── data/
+│   ├── raw/                 # Original, immutable data
+│   └── processed/           # Cleaned, processed data
+│
+├── scripts/
+│   ├── 01_data_import.R
+│   ├── 02_data_cleaning.R
+│   ├── 03_analysis.R
+│   └── 04_visualization.R
+│
+├── output/
+│   ├── figures/
+│   └── tables/
+│
+├── reports/
+│   └── analysis_report.Rmd
+│
+└── functions/
+    └── helper_functions.R
+```
+
+## 9.2 Code Style Guide
+
+```{r style_guide, eval=FALSE}
+# Use styler package to auto-format code
+library(styler)
+style_file("script.R")
+style_dir("scripts/")
+
+# Use lintr to check code quality
+library(lintr)
+lint("script.R")
+
+# Naming conventions:
+# - snake_case for variables and functions
+# - UPPERCASE for constants
+# - Meaningful names
+
+# Good spacing
+x <- 5 + 3  # GOOD
+x<-5+3      # BAD
+
+# Comment your code
+# Calculate average age of customers
+mean_age <- mean(customer_data$age)
+
+# Use functions for repeated code
+calculate_metrics <- function(data) {
+  # Your code
+}
+```
+
+## 9.3 Version Control
+
+```{bash git, eval=FALSE}
+# Initialize git repository
+git init
+
+# Create .gitignore
+# Add: *.RData, *.Rhistory, .Rproj.user/, data/
+
+# Commit changes
+git add .
+git commit -m "Initial commit"
+
+# Connect to GitHub
+git remote add origin https://github.com/username/repo.git
+git push -u origin main
+```
+
+---
+
+# 10. Essential R Packages Cheat Sheet
+
+## 10.1 Data Manipulation
+
+| Package | Purpose | Key Functions |
+|---------|---------|---------------|
+| `dplyr` | Data manipulation | `select()`, `filter()`, `mutate()`, `summarise()`, `group_by()` |
+| `tidyr` | Data reshaping | `pivot_longer()`, `pivot_wider()`, `separate()`, `unite()` |
+| `data.table` | Fast data manipulation | `[i, j, by]`, `:=`, `setkey()` |
+| `stringr` | String manipulation | `str_detect()`, `str_replace()`, `str_extract()` |
+| `lubridate` | Date/time handling | `ymd()`, `floor_date()`, `interval()` |
+
+## 10.2 Visualization
+
+| Package | Purpose | Key Functions |
+|---------|---------|---------------|
+| `ggplot2` | Static plots | `ggplot()`, `geom_*()`, `theme_*()` |
+| `plotly` | Interactive plots | `plot_ly()`, `ggplotly()` |
+| `leaflet` | Interactive maps | `leaflet()`, `addTiles()`, `addMarkers()` |
+| `gganimate` | Animated plots | `transition_*()`, `animate()` |
+
+## 10.3 Modeling & Stats
+
+| Package | Purpose | Key Functions |
+|---------|---------|---------------|
+| `caret` | Machine learning | `train()`, `predict()`, `confusionMatrix()` |
+| `randomForest` | Random forests | `randomForest()` |
+| `glmnet` | Regularized regression | `glmnet()`, `cv.glmnet()` |
+| `forecast` | Time series forecasting | `auto.arima()`, `ets()`, `forecast()` |
+
+## 10.4 Big Data
+
+| Package | Purpose | Key Functions |
+|---------|---------|---------------|
+| `data.table` | Fast operations | All operations |
+| `arrow` | Large files | `read_parquet()`, `open_dataset()` |
+| `sparklyr` | Spark interface | `spark_connect()`, `spark_read_*()` |
+| `disk.frame` | Disk-based operations | `csv_to_disk.frame()` |
+
+---
+
+# 11. Additional Resources
+
+## 11.1 Essential Books
+
+1. **"R for Data Science"** by Hadley Wickham & Garrett Grolemund
+   - Free online: https://r4ds.had.co.nz/
+   - Best introduction to tidyverse
+
+2. **"Advanced R"** by Hadley Wickham
+   - Free online: https://adv-r.hadley.nz/
+   - Deep dive into R programming
+
+3. **"R Graphics Cookbook"** by Winston Chang
+   - Comprehensive ggplot2 guide
+
+4. **"Geocomputation with R"** by Robin Lovelace et al.
+   - Free online: https://r.geocompx.org/
+   - Geospatial data in R
+
+5. **"Forecasting: Principles and Practice"** by Rob Hyndman
+   - Free online: https://otexts.com/fpp3/
+   - Time series forecasting
+
+## 11.2 Online Resources
+
+### Learning Platforms
+- RStudio Education: https://education.rstudio.com/
+- DataCamp: https://www.datacamp.com/
+- Coursera R Specializations
+- edX R courses
+
+### Reference Sites
+- CRAN Task Views: https://cran.r-project.org/web/views/
+- RStudio Cheatsheets: https://www.rstudio.com/resources/cheatsheets/
+- Stack Overflow [r] tag: https://stackoverflow.com/questions/tagged/r
+- R-bloggers: https://www.r-bloggers.com/
+
+### Communities
+- RStudio Community: https://community.rstudio.com/
+- r/rstats (Reddit): https://www.reddit.com/r/rstats/
+- #rstats on Twitter
+
+## 11.3 Staying Updated
+
+```{r stay_updated, eval=FALSE}
+# Subscribe to R Weekly newsletter
+# https://rweekly.org/
+
+# Follow R developers on Twitter
+# @hadleywickham, @JennyBryan, @WeAreRLadies
+
+# Attend conferences
+# useR!, rstudio::conf, satRdays
+
+# Join local R user groups
+# https://www.meetup.com/topics/r-project-for-statistical-computing/
+
+# Read R Journal
+# https://journal.r-project.org/
+```
+
+---
+
+# 12. Practice Exercises
+
+## Exercise 1: Data Manipulation
+```{r exercise1, eval=FALSE}
+# Task: Load mtcars, create new columns, summarize by groups
+# 1. Calculate mpg per cylinder ratio
+# 2. Categorize cars as "efficient" (mpg > 20) or "inefficient"
+# 3. Calculate mean hp and mean mpg by cylinder and efficiency category
+# 4. Sort results by mean_hp descending
+
+# Your solution here
+```
+
+## Exercise 2: Visualization
+```{r exercise2, eval=FALSE}
+# Task: Create a comprehensive visualization
+# 1. Use mtcars dataset
+# 2. Create scatter plot of mpg vs wt
+# 3. Color by number of cylinders
+# 4. Add smoothing line
+# 5. Facet by transmission type (am)
+# 6. Apply custom theme
+# 7. Add informative labels
+
+# Your solution here
+```
+
+## Exercise 3: Time Series
+```{r exercise3, eval=FALSE}
+# Task: Analyze AirPassengers dataset
+# 1. Decompose the time series
+# 2. Calculate 12-month moving average
+# 3. Plot original vs smoothed series
+# 4. Forecast 24 months ahead
+# 5. Visualize forecast with confidence intervals
+
+# Your solution here
+```
+
+## Exercise 4: Functions
+```{r exercise4, eval=FALSE}
+# Task: Write a flexible summary function
+# Create a function that:
+# 1. Takes a data frame and column name
+# 2. Returns mean, median, sd, min, max, and number of NAs
+# 3. Handles non-numeric columns gracefully
+# 4. Optionally removes outliers before calculation
+
+# Your solution here
+```
+
+---
+
+# Appendix: Session Information
+
+```{r session_info}
+# System information
+sessionInfo()
+
+# Package versions
+installed_packages <- installed.packages()[, c("Package", "Version")]
+key_packages <- c("dplyr", "ggplot2", "tidyr", "sf", "terra", 
+                  "shiny", "data.table", "lubridate", "forecast")
+installed_packages[installed_packages[, "Package"] %in% key_packages, ]
+```
+
+---
+
+# Quick Reference Card
+
+## Most Used Functions
+
+```{r quick_ref, eval=FALSE}
+# Data Import/Export
+read_csv()        # Import CSV
+write_csv()       # Export CSV
+readRDS()         # Import RDS
+saveRDS()         # Export RDS
+
+# Data Manipulation
+select()          # Select columns
+filter()          # Filter rows
+mutate()          # Create/modify columns
+summarise()       # Aggregate
+group_by()        # Group data
+arrange()         # Sort rows
+left_join()       # Join data
+
+# Data Cleaning
+na.omit()         # Remove NAs
+replace_na()      # Replace NAs
+distinct()        # Remove duplicates
+str_trim()        # Trim whitespace
+
+# Visualization
+ggplot()          # Initialize plot
+geom_point()      # Scatter plot
+geom_line()       # Line plot
+geom_bar()        # Bar plot
+facet_wrap()      # Faceting
+ggsave()          # Save plot
+
+# Statistics
+mean()            # Mean
+median()          # Median
+sd()              # Standard deviation
+cor()             # Correlation
+lm()              # Linear model
+summary()         # Summary statistics
+
+# Time Series
+ts()              # Create time series
+decompose()       # Decompose
+lag()             # Lag values
+diff()            # Difference
+
+# Geospatial
+st_read()         # Read spatial data
+st_transform()    # Transform CRS
+st_buffer()       # Buffer
+st_intersection() # Intersection
+```
+
+---
+
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

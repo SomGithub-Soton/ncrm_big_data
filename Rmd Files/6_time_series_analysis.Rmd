@@ -1,0 +1,789 @@
+---
+title: "Handling Time Series (Temporal) Data in R"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    geometry: margin=1in
+    fontsize: 11pt
+---
+
+  
+```{r setup, include=FALSE}
+# Set global options for the document
+knitr::opts_chunk$set(
+  echo = TRUE,           # Show code in output
+  warning = FALSE,       # Hide warnings
+  message = FALSE,       # Hide messages
+  fig.width = 10,        # Figure width
+  fig.height = 6,        # Figure height
+  cache = FALSE          # Disable caching for training purposes
+)
+
+# Load required libraries for time series analysis
+library(data.table)      # For fast data manipulation
+library(dplyr)           # For intuitive data wrangling
+library(ggplot2)         # For creating graphs
+library(microbenchmark)  # For performance comparison
+library(lubridate)       # For date-time manipulation
+library(xts)             # For extensible time series
+library(zoo)             # For regular and irregular time series
+library(forecast)        # For time series forecasting
+library(tsibble)         # For tidy temporal data frames
+library(feasts)          # For feature extraction and statistics
+library(timetk)          # For time series toolkits
+library(plotly)          # For interactive plots
+library(DT)              # For interactive tables
+library(kableExtra)      # For nice tables
+library(fpp3)
+library(gridExtra)
+library(readr)
+library(tidyr)
+
+
+# Set display options
+options(dplyr.print_max = 20, 
+        dplyr.print_min = 5,
+        digits = 4,
+        scipen = 999)
+
+```
+
+# Handling Time Series (Temporal) Data in R
+
+## Welcome to Time Series Analysis Training
+
+Welcome to the fourth section of our comprehensive training program! This section focuses on handling time series (temporal) data in R. Time series analysis is crucial for understanding patterns, trends, and seasonality in data collected over time. This manual will guide you through practical techniques to handle temporal data efficiently.
+
+By the end of this training, you will be able to:
+
+- Understand and create temporal data structures in R (Date, POSIXct, lubridate)
+- Perform time series aggregation and decomposition
+- Handle missing values in time series data
+- Visualize time series patterns effectively
+- Work with extremely large time series datasets
+- Compare different time series libraries and their functions
+- Apply best practices for temporal data analysis
+
+# Introduction to Temporal Data in R
+
+## What is Time Series Data?
+Time series data is a sequence of observations recorded at regular or irregular time intervals. Common examples include:
+  
+- Daily stock prices
+- Monthly sales figures
+- Hourly temperature readings
+- Annual GDP growth rates
+- Real-time sensor data
+
+
+### Characteristics of time series data
+
+- TREND: Long-term increase or decrease in the data
+- SEASONALITY: Regular patterns that repeat at fixed intervals
+- CYCLICALITY: Patterns that occur at irregular intervals
+- RANDOMNESS: Unpredictable, irregular component
+- AUTOCORRELATION: Correlation between observations at different time lags
+
+```{r}
+
+# Create a sample time series to demonstrate patterns
+set.seed(123)
+n <- 100
+time_points <- 1:n
+
+# Create different components
+trend_component <- 0.05 * time_points
+seasonal_component <- 5 * sin(2 * pi * time_points / 12)
+random_component <- rnorm(n, 0, 2)
+
+# Combine components
+sample_ts <- trend_component + seasonal_component + random_component
+
+# Create visualization data
+ts_data <- data.frame(
+  Time = rep(time_points, 4),
+  Value = c(trend_component, seasonal_component, random_component, sample_ts),
+  Component = rep(c("Trend", "Seasonality", "Random", "Combined"), each = n)
+)
+
+# Plot components
+p_components <- ggplot(ts_data, aes(x = Time, y = Value, color = Component)) +
+  geom_line(linewidth = 0.8) +
+  facet_wrap(~Component, scales = "free_y", ncol = 2) +
+  labs(title = "Time Series Components",
+       subtitle = "Decomposition of a time series into its basic components",
+       x = "Time",
+       y = "Value") +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  scale_color_brewer(palette = "Set1")
+
+print(p_components)
+``` 
+## 1. Temporal Data Structures in R
+
+### 1.1 Basic Date Types
+
+**1. Date class – for calendar dates**
+
+```{r basic-date-types}
+# Date class
+dates <- as.Date(c("2024-01-01", "2024-02-15", "2024-12-31"))
+dates
+class(dates)
+```
+
+**2. POSIXct class – for date-times with timezone**
+
+```{r posixct-date-times}
+# POSIXct class
+date_times <- as.POSIXct(c("2024-01-01 09:30:00", "2024-01-01 14:45:00"))
+format(date_times, "%Y-%m-%d %H:%M:%S")
+class(date_times)
+```
+
+### 1.2 Working with *lubridate*
+
+**Using lubridate for date manipulation**
+
+1) **Parsing dates from different formats**
+
+```{r lubridate-parsing}
+# Parsing dates from different formats
+date_strings <- c("2024-01-15", "15/01/2024", "January 15, 2024", "15 Jan 2024")
+
+parsed <- tibble(
+  Input = date_strings,
+  Parsed = c(
+    as.character(ymd(date_strings[1])),
+    as.character(dmy(date_strings[2])),
+    as.character(mdy(date_strings[3])),
+    as.character(dmy(date_strings[4]))
+  )
+)
+parsed
+```
+
+2) **Extracting date components**
+
+```{r lubridate-components}
+# Extracting date components
+sample_dates <- ymd(c("2024-01-15", "2024-06-30", "2024-12-25"))
+
+components <- tibble(
+  Date = sample_dates,
+  Year = year(sample_dates),
+  Month = month(sample_dates, label = TRUE),
+  Day = day(sample_dates),
+  Weekday = wday(sample_dates, label = TRUE),
+  Quarter = quarter(sample_dates)
+)
+components
+```
+
+3) **Date arithmetic**
+
+```{r lubridate-arithmetic}
+start_date <- ymd("2024-01-01")
+
+results <- tibble(
+  Description = c("Start date", "Add 30 days", "Add 2 months", "End of month"),
+  Value = c(
+    as.character(start_date),
+    as.character(start_date + days(30)),
+    as.character(start_date + months(2)),
+    as.character(ceiling_date(start_date, "month") - days(1))
+  )
+)
+results
+```
+
+### 1.3 Creating Time Series Sequences
+
+Below are examples of creating regular time sequences (daily, weekly, monthly) starting at 2024-01-01.
+
+```{r create-ts-sequences}
+start_date <- ymd("2024-01-01")
+
+# Daily sequence for one month
+daily_seq <- seq(start_date, by = "day", length.out = 30)
+# Show first 10
+daily_seq[1:10]
+
+# Weekly sequence (12 weeks)
+weekly_seq <- seq(start_date, by = "week", length.out = 12)
+weekly_seq
+
+# Monthly sequence (12 months)
+monthly_seq <- seq(start_date, by = "month", length.out = 12)
+monthly_seq
+```
+
+---
+
+## 2. Creating Sample Time Series Data
+
+We create one year of daily data with a linear trend, annual and weekly seasonality, and random noise. We also generate a temperature series.
+
+```{r create-sample-ts}
+set.seed(123)
+n_days <- 365  # One year of daily data
+
+sample_ts <- tibble(
+  date = seq(ymd("2024-01-01"), by = "day", length.out = n_days),
+  # Components
+  trend = 0.1 * (1:n_days),               # Linear trend
+  seasonal = 20 * sin(2 * pi * (1:n_days)/365),  # Yearly seasonality
+  weekly_pattern = 5 * sin(2 * pi * (1:n_days)/7), # Weekly pattern
+  noise = rnorm(n_days, 0, 3),            # Random noise
+  # Combined series
+  sales = 100 + trend + seasonal + weekly_pattern + noise,
+  temperature = 15 + 10 * sin(2 * pi * (1:n_days)/365) + rnorm(n_days, 0, 2)
+) %>%
+  mutate(
+    month = month(date, label = TRUE),
+    weekday = wday(date, label = TRUE),
+    is_weekend = weekday %in% c("Sat", "Sun")
+  )
+
+# Summary information
+list(
+  date_range = paste(min(sample_ts$date), "to", max(sample_ts$date)),
+  observations = nrow(sample_ts),
+  variables = c("sales", "temperature")
+)
+
+# First 10 rows
+head(sample_ts, 10)
+```
+
+---
+
+## 3. Time Series Visualization
+
+We create four visualizations: (1) basic time series, (2) series with trend component, (3) sales by month, and (4) sales by weekday.
+
+```{r visualize-sample, fig.height=8}
+# Basic time series plot
+p1 <- ggplot(sample_ts, aes(x = date, y = sales)) +
+  geom_line(color = "blue", linewidth = 0.8) +
+  labs(title = "Sales Over Time", x = "Date", y = "Sales") +
+  theme_minimal()
+
+# Plot with components
+p2 <- ggplot(sample_ts, aes(x = date)) +
+  geom_line(aes(y = sales), color = "blue", alpha = 0.5, linewidth = 0.5) +
+  geom_line(aes(y = trend + 100), color = "red", linewidth = 1) +
+  labs(title = "Sales with Trend Component", x = "Date", y = "Value") +
+  theme_minimal()
+
+# Monthly patterns
+p3 <- ggplot(sample_ts, aes(x = month, y = sales, group = month)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Sales by Month", x = "Month", y = "Sales") +
+  theme_minimal()
+
+# Daily patterns
+p4 <- ggplot(sample_ts, aes(x = weekday, y = sales, group = weekday)) +
+  geom_boxplot(fill = "lightgreen") +
+  labs(title = "Sales by Weekday", x = "Weekday", y = "Sales") +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+---
+
+## 4. Time Series Aggregation
+
+### 4.1 Basic Aggregation
+
+**1) Daily to weekly aggregation**
+
+```{r daily-to-weekly}
+weekly_agg <- sample_ts %>%
+  mutate(week_start = floor_date(date, "week")) %>%
+  group_by(week_start) %>%
+  summarise(
+    avg_sales = mean(sales),
+    total_sales = sum(sales),
+    obs_count = n(),
+    .groups = 'drop'
+  )
+
+head(weekly_agg, 5)
+```
+
+**2) Daily to monthly aggregation**
+
+```{r daily-to-monthly}
+monthly_agg <- sample_ts %>%
+  mutate(month_start = floor_date(date, "month")) %>%
+  group_by(month_start) %>%
+  summarise(
+    avg_sales = mean(sales),
+    total_sales = sum(sales),
+    avg_temp = mean(temperature),
+    .groups = 'drop'
+  )
+
+monthly_agg
+```
+
+**3) Aggregation by weekday**
+
+```{r aggregation-by-weekday}
+weekday_agg <- sample_ts %>%
+  group_by(weekday) %>%
+  summarise(
+    avg_sales = mean(sales),
+    min_sales = min(sales),
+    max_sales = max(sales),
+    .groups = 'drop'
+  )
+
+weekday_agg
+```
+
+### 4.2 Visualizing Aggregated Data
+
+```{r visualize-aggregates}
+p_agg1 <- ggplot() +
+  geom_line(data = sample_ts, aes(x = date, y = sales), 
+            color = "gray", alpha = 0.5, linewidth = 0.5) +
+  geom_line(data = weekly_agg, aes(x = week_start, y = avg_sales), 
+            color = "red", linewidth = 1) +
+  labs(title = "Daily Data with Weekly Averages", x = "Date", y = "Sales") +
+  theme_minimal()
+
+p_agg2 <- ggplot(monthly_agg, aes(x = month_start, y = total_sales)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Monthly Total Sales", x = "Month", y = "Total Sales") +
+  theme_minimal()
+
+grid.arrange(p_agg1, p_agg2, ncol = 2)
+```
+
+---
+
+## 5. Time Series Decomposition
+
+### 5.1 Understanding Components
+
+Time series decomposition separates data into components:  
+**Y(t) = Trend(t) + Seasonal(t) + Random(t)**
+
+```{r components-synthetic}
+set.seed(123)
+n <- 120  # 10 years of monthly data
+time <- 1:n
+
+# Create components
+trend_comp <- 0.5 * time
+seasonal_comp <- 10 * sin(2 * pi * time / 12)
+random_comp <- rnorm(n, 0, 3)
+
+# Combine components
+ts_data <- trend_comp + seasonal_comp + random_comp
+
+# Visualize components separately
+components_df <- tibble(
+  time = rep(time, 4),
+  value = c(ts_data, trend_comp, seasonal_comp, random_comp),
+  component = rep(c("Combined", "Trend", "Seasonal", "Random"), each = n)
+)
+
+p_components <- ggplot(components_df, aes(x = time, y = value)) +
+  geom_line(linewidth = 0.8, color = "blue") +
+  facet_wrap(~component, scales = "free_y", ncol = 2) +
+  labs(title = "Time Series Components", subtitle = "Combined = Trend + Seasonal + Random",
+       x = "Time", y = "Value") +
+  theme_minimal()
+
+p_components
+```
+
+### 5.2 Classical Decomposition
+
+```{r classical-decomposition}
+# Convert to time series object
+ts_object <- ts(ts_data, frequency = 12)
+
+# Perform decomposition
+decomp_result <- decompose(ts_object, type = "additive")
+
+# Plot decomposition
+par(mfrow = c(4, 1), mar = c(3, 4, 2, 2))
+plot(decomp_result)
+```
+
+- **Observed:** Original time series  
+- **Trend:** Long-term pattern  
+- **Seasonal:** Regular repeating pattern  
+- **Random:** Irregular component
+
+### 5.3 STL Decomposition (More Robust)
+
+```{r stl-decomposition}
+# STL is more robust for many time series
+stl_result <- stl(ts_object, s.window = "periodic")
+
+# Plot STL decomposition
+par(mfrow = c(4, 1), mar = c(3, 4, 2, 2))
+plot(stl_result, main = "STL Decomposition")
+
+# Extract components
+components_stl <- tibble(
+  time = time,
+  observed = as.numeric(ts_object),
+  trend = as.numeric(stl_result$time.series[, "trend"]),
+  seasonal = as.numeric(stl_result$time.series[, "seasonal"]),
+  remainder = as.numeric(stl_result$time.series[, "remainder"])
+)
+
+# Component statistics
+components_stl %>%
+  summarise(
+    Trend_Mean = mean(trend), Trend_SD = sd(trend),
+    Seasonal_Mean = mean(seasonal), Seasonal_SD = sd(seasonal),
+    Remainder_Mean = mean(remainder), Remainder_SD = sd(remainder)
+  )
+```
+
+---
+
+## 6. Practical Exercise with Real-World Data
+
+### 6.1 Load Real-World Time Series Data
+
+We use the Australian **tourism** dataset (from the `tsibbledata` package, loaded via `fpp3`).
+
+```{r load-tourism}
+# Load Australian tourism dataset (built-in from tsibble/fpp3)
+data("tourism")
+
+# Inspect
+tourism
+
+# Basic information
+list(
+  time_period = paste(min(tourism$Quarter), "to", max(tourism$Quarter)),
+  total_observations = nrow(tourism),
+  n_series = n_distinct(tourism$Region) * n_distinct(tourism$Purpose),
+  variables = names(tourism)
+)
+```
+
+### 6.2 Explore the Data
+
+```{r explore-tourism}
+# First 10 rows
+head(tourism, 10)
+
+# Summary statistics by region
+region_summary <- tourism %>%
+  group_by(Region) %>%
+  summarise(
+    avg_trips = mean(Trips),
+    total_trips = sum(Trips),
+    n_quarters = n(),
+    .groups = 'drop'
+  )
+region_summary
+
+# Summary by purpose
+purpose_summary <- tourism %>%
+  group_by(Purpose) %>%
+  summarise(
+    avg_trips = mean(Trips),
+    total_trips = sum(Trips),
+    .groups = 'drop'
+  )
+purpose_summary
+```
+
+### 6.3 Visualize the Time Series
+
+We visualize (1) overall tourism, (2) by purpose, (3) top 4 regions, and (4) seasonal patterns by purpose.
+
+```{r visualize-tourism, fig.height=8}
+
+# 1. Overall time series (use tsibble's index_by on the time index)
+overall <- tourism %>%
+  index_by(Quarter) %>%
+  summarise(total_trips = sum(Trips))
+
+p1 <- ggplot(overall, aes(x = Quarter, y = total_trips)) +
+  geom_line(color = "blue", linewidth = 1) +
+  labs(title = "Total Australian Tourism Over Time",
+       x = "Quarter", y = "Total Trips") +
+  theme_minimal()
+
+# 2. By purpose (aggregate by index, then group by Purpose)
+by_purpose <- tourism %>%
+  index_by(Quarter) %>%
+  group_by(Purpose) %>%
+  summarise(total_trips = sum(Trips), .groups = "drop_last")
+
+p2 <- ggplot(by_purpose, aes(x = Quarter, y = total_trips, color = Purpose)) +
+  geom_line(linewidth = 0.8) +
+  labs(title = "Tourism by Purpose",
+       x = "Quarter", y = "Total Trips") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# 3. Top 4 regions (compute on a plain tibble to avoid index constraints)
+top_regions <- tourism %>%
+  as_tibble() %>%
+  group_by(Region) %>%
+  summarise(total = sum(Trips), .groups = "drop") %>%
+  arrange(desc(total)) %>%
+  slice_head(n = 4) %>%
+  pull(Region)
+
+# Then aggregate by index and group by Region for plotting
+by_region <- tourism %>%
+  filter(Region %in% top_regions) %>%
+  index_by(Quarter) %>%
+  group_by(Region) %>%
+  summarise(total_trips = sum(Trips), .groups = "drop_last")
+
+p3 <- ggplot(by_region, aes(x = Quarter, y = total_trips, color = Region)) +
+  geom_line(linewidth = 0.8) +
+  labs(title = "Tourism in Top 4 Regions",
+       x = "Quarter", y = "Total Trips") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# 4. Seasonal patterns by purpose (this step does not need index_by)
+seasonal_patterns <- tourism %>%
+  mutate(Year = year(Quarter),
+         Qtr  = quarter(Quarter)) %>%
+  group_by(Purpose, Qtr) %>%
+  summarise(avg_trips = mean(Trips), .groups = "drop")
+
+p4 <- ggplot(seasonal_patterns, aes(x = factor(Qtr), y = avg_trips, fill = Purpose)) +
+  geom_col(position = "dodge") +
+  labs(title = "Average Quarterly Tourism by Purpose",
+       x = "Quarter", y = "Average Trips") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+### 6.4 Time Series Aggregation Practice
+
+```{r aggregation-practice}
+# 1. Aggregate to yearly data
+yearly_data <- tourism %>%
+  mutate(Year = year(Quarter)) %>%
+  group_by(Region, Purpose, Year) %>%
+  summarise(
+    total_trips = sum(Trips),
+    avg_trips = mean(Trips),
+    quarterly_count = n(),
+    .groups = 'drop'
+  )
+
+head(yearly_data, 10)
+
+# 2. Aggregate by region and purpose
+region_purpose_summary <- tourism %>%
+  group_by(Region, Purpose) %>%
+  summarise(
+    total_trips = sum(Trips),
+    avg_trips = mean(Trips),
+    first_quarter = min(Quarter),
+    last_quarter = max(Quarter),
+    quarters_count = n(),
+    .groups = 'drop'
+  )
+
+head(region_purpose_summary, 10)
+```
+
+### 6.5 Time Series Decomposition Practice
+
+We focus on one time series: **Business trips in Sydney**.
+
+```{r sydney-decomposition, fig.height=8}
+# Filter: Business trips in Sydney
+sydney_business <- tourism %>%
+  filter(Region == "Sydney", Purpose == "Business") %>%
+  as_tsibble(index = Quarter)
+
+# Convert to ts object for decomposition
+ts_sydney <- ts(sydney_business$Trips, frequency = 4)
+
+# Perform STL decomposition
+decomp_sydney <- stl(ts_sydney, s.window = "periodic")
+
+# Plot decomposition
+par(mfrow = c(4, 1), mar = c(3, 4, 2, 2))
+plot(decomp_sydney, main = "STL Decomposition: Business Trips in Sydney")
+
+# Extract components
+components_df <- tibble(
+  Quarter = sydney_business$Quarter,
+  Observed = sydney_business$Trips,
+  Trend = as.numeric(decomp_sydney$time.series[, "trend"]),
+  Seasonal = as.numeric(decomp_sydney$time.series[, "seasonal"]),
+  Remainder = as.numeric(decomp_sydney$time.series[, "remainder"])
+)
+
+# Decomposition statistics
+components_df %>%
+  summarise(
+    Observed_Mean = mean(Observed),
+    Trend_Mean = mean(Trend),
+    Seasonal_Mean = mean(Seasonal),
+    Seasonal_Amp = max(Seasonal) - min(Seasonal),
+    Remainder_SD = sd(Remainder)
+  )
+
+# Visualize components
+components_long <- components_df %>%
+  pivot_longer(cols = -Quarter, names_to = "Component", values_to = "Value")
+
+p_decomp <- ggplot(components_long, aes(x = Quarter, y = Value)) +
+  geom_line(color = "blue", linewidth = 0.8) +
+  facet_wrap(~Component, scales = "free_y", ncol = 1) +
+  labs(title = "Business Trips in Sydney - Component Analysis", x = "Quarter", y = "Trips") +
+  theme_minimal()
+
+p_decomp
+```
+
+### 6.6 Interactive Visualization
+
+We create an interactive time series plot using **plotly**.
+
+```{r interactive-plot, results='asis'}
+# Prepare data for interactive plot (convert to plain tibble to avoid tsibble index constraints)
+interactive_data <- tourism %>%
+  as_tibble() %>%                                   # <-- drop tsibble semantics
+  group_by(Quarter, Purpose) %>%
+  summarise(total_trips = sum(Trips), .groups = "drop")
+
+# Create interactive plot
+p_interactive <- plot_ly(
+  interactive_data,
+  x = ~Quarter, y = ~total_trips, color = ~Purpose,
+  type = "scatter", mode = "lines",
+  hovertemplate = paste(
+    "Quarter: %{x}<br>",
+    "Trips: %{y:,}<br>",
+    "Purpose: %{text}<extra></extra>"
+  ),
+  text = ~Purpose
+) %>%
+  layout(
+    title = "Australian Tourism by Purpose (Interactive)",
+    xaxis = list(title = "Quarter"),
+    yaxis = list(title = "Total Trips"),
+    hovermode = "x unified"
+  )
+
+p_interactive
+```
+
+
+## Summary and Key Takeaways
+
+You have learned how to:
+
+1. **Create and manage temporal data**  
+   - Use `Date` and `POSIXct` classes  
+   - Parse dates with *lubridate* (`ymd()`, `dmy()`, `mdy()`)  
+   - Extract date components (`year()`, `month()`, `wday()`)  
+   - Perform date arithmetic
+
+2. **Work with time series data**  
+   - Create regular time sequences with `seq()`  
+   - Handle real-world time series data  
+   - Convert between different time series formats
+
+3. **Perform time series aggregation**  
+   - Aggregate data by different time periods  
+   - Use `group_by()` and `summarise()` for aggregation  
+   - Visualize aggregated time series
+
+4. **Decompose time series**  
+   - Understand trend, seasonal, and random components  
+   - Perform classical decomposition with `decompose()`  
+   - Use STL decomposition for robust analysis  
+   - Interpret decomposition results
+
+5. **Apply to real-world data**  
+   - Load and explore real time series datasets  
+   - Create meaningful visualizations  
+   - Perform analysis on actual data
+
+**Key functions to remember:**  
+- *lubridate*: `ymd()`, `floor_date()`, `year()`, `month()`, `wday()`  
+- *dplyr*: `group_by()`, `summarise()`, `mutate()`  
+- *ggplot2*: `ggplot()`, `geom_line()`, `geom_col()`  
+- *forecast*: `decompose()`, `stl()`  
+- *tsibble*: `as_tsibble()` for tidy time series
+
+## Additional Resources
+
+Below are some helpful online references for deepening your understanding of time series analysis, R time series packages, visualization tools, and forecasting techniques.
+
+### Time Series Concepts & Tutorials
+- Hyndman & Athanasopoulos — *Forecasting: Principles and Practice (Free Online Book)*  
+  https://otexts.com/fpp3/
+- Duke University — *Time Series Analysis Tutorial*  
+  https://people.duke.edu/~rnau/411home.htm
+- Penn State — *STAT 510: Applied Time Series Analysis*  
+  https://online.stat.psu.edu/stat510/
+
+### R Time Series Packages & Documentation
+- **tsibble** package documentation  
+  https://tsibble.tidyverts.org/
+- **feasts** for decomposition & feature extraction  
+  https://feasts.tidyverts.org/
+- **fable** forecasting framework  
+  https://fable.tidyverts.org/
+- **forecast** package (base forecasting methods)  
+  https://pkg.robjhyndman.com/forecast/
+- **lubridate** for working with dates  
+  https://lubridate.tidyverse.org/
+
+### Visualization & Plotting
+- ggplot2 official documentation  
+  https://ggplot2.tidyverse.org/
+- plotly for interactive charts  
+  https://plotly.com/r/
+
+### Open Data Sources for Practice
+- Australian Government Tourism Data (ABS)  
+  https://www.abs.gov.au/statistics/industry/tourism-and-transport
+- European Centre for Medium‑Range Weather Forecasts (ECMWF)  
+  https://www.ecmwf.int/en/forecasts/datasets
+- World Bank Open Data  
+  https://data.worldbank.org/
+- NOAA Climate Data  
+  https://www.ncdc.noaa.gov/data-access
+
+### Additional Learning
+- RStudio Cheatsheets (including Time Series, Data Wrangling, ggplot2)  
+  https://posit.co/resources/cheatsheets/
+- Kaggle Time Series Datasets  
+  https://www.kaggle.com/datasets?search=time+series
+
+
+---
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

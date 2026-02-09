@@ -1,0 +1,578 @@
+---
+title: "Handling Large Datasets in R"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+  pdf_document:
+    toc: true
+    toc_depth: 3
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  cache = FALSE
+)
+```
+
+# Introduction to Handling Large Datasets
+
+Welcome to our **Big Data Analysis and Management** training! In this section, you'll learn practical techniques for handling large datasets efficiently in R. Each step includes **what you’ll learn**, **why it matters**, and **how to run** the examples.
+
+## Learning Objectives
+
+By the end of this section, you will be able to:
+
+1. Understand memory constraints when working with large datasets  
+2. Use **data.table** for fast data manipulation  
+3. Apply memory‑efficient techniques with **dplyr**  
+4. Implement chunk processing for very large files  
+5. Work with real‑world **health** and **environmental** datasets
+
+## Required Packages
+
+**Install (run once):**
+
+```{r packages_install, eval=FALSE}
+install.packages(c("data.table", "dplyr", "ggplot2", "DT", 
+                   "kableExtra", "microbenchmark", "pryr", "readr", "tibble"))
+```
+
+**Load and set display options:**
+
+```{r load-packages}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(kableExtra)
+library(microbenchmark)
+library(pryr)
+library(readr)
+library(tibble)
+
+options(dplyr.print_max = 20, 
+        dplyr.print_min = 5,
+        digits = 4,
+        scipen = 999)
+```
+
+---
+
+# 1. Understanding Memory Constraints
+
+## 1.1 Checking Available Memory
+
+**What you’ll learn**: How to assess available memory before loading or transforming large files.  
+**Why it matters**: Many operations may need **2–3×** the data size (sorting, joins, copies).  
+**How to run**: Execute the chunk; results are shown as a small table/list.
+
+```{r check-memory}
+get_memory_status <- function() {
+  if (.Platform$OS.type == "windows") {
+    total_memory <- tryCatch(memory.limit(), error = function(e) NA)
+    used_memory  <- tryCatch(memory.size(),  error = function(e) NA)
+    tibble(
+      Metric = c("Total memory (MB)", "Used memory (MB)", "Percent used (%)"),
+      Value  = c(total_memory,
+                 used_memory,
+                 ifelse(is.na(total_memory) | is.na(used_memory), NA, round(used_memory/total_memory*100, 1)))
+    )
+  } else {
+    # Cross‑platform approximate snapshot using pryr
+    tibble(
+      Metric = c("Approx memory in use (MB)"),
+      Value  = round(as.numeric(mem_used())/1024^2, 2)
+    )
+  }
+}
+
+mem_snapshot <- get_memory_status()
+knitr::kable(mem_snapshot, caption = "Memory status snapshot")
+```
+
+## 1.2 Creating Test Directory Structure
+
+**What you’ll learn**: Set up a simple, reusable project structure.  
+**Why it matters**: Keeps data, outputs, and figures organized for reproducibility.
+
+```{r create-directories}
+create_directories <- function() {
+  dirs <- c("data", "output", "figures", "temp")
+  status <- sapply(dirs, function(dir){ if(!dir.exists(dir)) {dir.create(dir); "created"} else {"exists"} })
+  tibble(Directory = dirs, Status = unname(status))
+}
+
+ dir_status <- create_directories()
+knitr::kable(dir_status, caption = "Project directories and status")
+```
+
+---
+
+# 2. Downloading Sample Datasets
+
+We’ll work with two public datasets: (1) **COVID‑19 global data** and (2) **Air pollution by city**.  
+> *Tip:* Downloads can be large—ensure you have a stable connection.
+
+## 2.1 Health Dataset: COVID‑19 Global Data
+
+```{r download-covid}
+download_covid_data <- function() {
+  covid_url  <- "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"
+  covid_file <- "data/covid19_global.csv"
+  if (!file.exists(covid_file)) {
+    start_time <- Sys.time()
+    download.file(covid_url, covid_file, mode = "wb", quiet = FALSE)
+    end_time <- Sys.time()
+    tibble(
+      File = basename(covid_file),
+      Path = covid_file,
+      Download_Time_s = round(as.numeric(end_time - start_time), 2),
+      Size_MB = round(file.info(covid_file)$size/1024^2, 2)
+    )
+  } else {
+    tibble(
+      File = basename(covid_file),
+      Path = covid_file,
+      Download_Time_s = 0,
+      Size_MB = round(file.info(covid_file)$size/1024^2, 2)
+    )
+  }
+}
+
+covid_meta <- download_covid_data()
+knitr::kable(covid_meta, caption = "COVID‑19 dataset download summary")
+
+covid_file <- covid_meta$Path[1]
+```
+
+## 2.2 Environmental Dataset: Air Pollution Data
+
+```{r download-air-pollution}
+download_air_pollution_data <- function() {
+  air_url  <- "https://raw.githubusercontent.com/owid/owid-datasets/master/datasets/Air%20pollution%20by%20city%20-%20Fouquet%20and%20DPCC%20(2011)/Air%20pollution%20by%20city%20-%20Fouquet%20and%20DPCC%20(2011).csv"
+  air_file <- "data/air_pollution.csv"
+  if (!file.exists(air_file)) {
+    start_time <- Sys.time()
+    download.file(air_url, air_file, mode = "wb", quiet = FALSE)
+    end_time <- Sys.time()
+    tibble(
+      File = basename(air_file), Path = air_file,
+      Download_Time_s = round(as.numeric(end_time - start_time), 2),
+      Size_MB = round(file.info(air_file)$size/1024^2, 2)
+    )
+  } else {
+    tibble(
+      File = basename(air_file), Path = air_file,
+      Download_Time_s = 0,
+      Size_MB = round(file.info(air_file)$size/1024^2, 2)
+    )
+  }
+}
+
+air_meta <- download_air_pollution_data()
+knitr::kable(air_meta, caption = "Air pollution dataset download summary")
+
+air_file <- air_meta$Path[1]
+```
+
+---
+
+# 3. Exploring Dataset Structure
+
+## 3.1 Quick File Inspection
+
+**What you’ll learn**: Inspect file size, column names, and row count **without** loading the full file.  
+**Why it matters**: Helps estimate memory needed and plan chunked workflows.
+
+```{r file-inspection}
+inspect_dataset <- function(file_path) {
+  file_size_mb <- round(file.info(file_path)$size/1024^2, 2)
+  sample_dt    <- data.table::fread(file_path, nrows = 100)
+  n_cols       <- ncol(sample_dt)
+  # Try fast row count via system tools; fallback to NA if unavailable
+  row_count <- tryCatch({
+    as.numeric(system2("wc", args = c("-l", file_path), stdout = TRUE)) - 1
+  }, error = function(e) NA)
+  tibble(
+    File = basename(file_path),
+    Size_MB = file_size_mb,
+    Estimated_Rows = row_count,
+    N_Columns = n_cols,
+    Columns_Preview = paste(names(sample_dt), collapse = ", ")
+  )
+}
+
+covid_info <- inspect_dataset(covid_file)
+air_info   <- inspect_dataset(air_file)
+
+knitr::kable(covid_info, caption = "COVID‑19 file inspection")
+knitr::kable(air_info,   caption = "Air pollution file inspection")
+```
+
+## 3.2 Display Sample Data
+
+**How to run**: The previews below use **DT** for scrolling and search.
+
+```{r show-samples}
+DT::datatable(data.table::fread(covid_file, nrows = 10),
+              options = list(pageLength = 10, scrollX = TRUE),
+              caption = "COVID‑19 Data Sample (First 10 rows)")
+
+DT::datatable(data.table::fread(air_file, nrows = 10),
+              options = list(pageLength = 10, scrollX = TRUE),
+              caption = "Air Pollution Data Sample (First 10 rows)")
+```
+
+---
+
+# 4. Working with data.table
+
+## 4.1 Introduction to data.table
+
+**data.table** is an enhanced `data.frame` with concise syntax and in‑place modifications—ideal for large datasets.
+
+```{r data.table-basics}
+# Fast read with fread()
+covid_dt <- fread(covid_file)
+summary_tbl <- tibble(Rows = nrow(covid_dt), Columns = ncol(covid_dt))
+knitr::kable(summary_tbl, caption = "COVID‑19 data loaded with data.table::fread()")
+
+# Syntax refresher: DT[i, j, by]
+syntax_notes <- tibble(
+  Component = c("i", "j", "by"),
+  Meaning   = c("Row filter (subsetting)", "Columns/expressions (select/compute)", "Grouping variable(s)")
+)
+knitr::kable(syntax_notes, caption = "Core data.table indexing components")
+```
+
+## 4.2 Filtering and Selecting Data
+
+```{r data.table-filtering}
+# Example 1: Country filter (United States)
+us_data <- covid_dt[location == "United States", ]
+knitr::kable(head(us_data, 5), caption = sprintf("United States rows (showing 5 of %s)", format(nrow(us_data), big.mark=",")))
+
+# Example 2: Select specific columns
+selected_cols <- covid_dt[, .(date, location, total_cases, total_deaths, population)]
+knitr::kable(head(selected_cols, 5), caption = "Selected columns preview")
+
+# Example 3: Filter + select + sort
+recent_us_data <- covid_dt[
+  location == "United States" & total_cases > 1000000,
+  .(date, total_cases, total_deaths, new_cases)
+][order(-total_cases)]
+knitr::kable(head(recent_us_data, 5), caption = sprintf("US rows with >1M cases (n = %s) — top 5", format(nrow(recent_us_data), big.mark=",")))
+```
+
+## 4.3 Aggregation Operations
+
+```{r data.table-aggregation}
+# Example 1: Total cases by country (max across time)
+total_by_country <- covid_dt[
+  !is.na(total_cases),
+  .(total_cases_max  = max(total_cases,  na.rm = TRUE),
+    total_deaths_max = max(total_deaths, na.rm = TRUE),
+    avg_new_cases    = mean(new_cases,   na.rm = TRUE)),
+  by = .(location, continent)
+][order(-total_cases_max)]
+
+knitr::kable(head(total_by_country, 5), caption = "Top 5 countries by total cases (max)")
+
+# Example 2: Summary statistics by continent
+summary_stats <- covid_dt[
+  !is.na(new_cases),
+  .(mean_cases = mean(new_cases,   na.rm = TRUE),
+    median_cases = median(new_cases, na.rm = TRUE),
+    sd_cases = sd(new_cases,         na.rm = TRUE),
+    min_cases = min(new_cases,       na.rm = TRUE),
+    max_cases = max(new_cases,       na.rm = TRUE),
+    total_observations = .N),
+  by = continent
+]
+
+knitr::kable(summary_stats, caption = "New case statistics by continent")
+```
+
+## 4.4 Memory‑Efficient Operations
+
+```{r data.table-memory}
+# Measure memory before and after a light operation
+mem_before <- mem_used()
+efficient_select <- covid_dt[, .SD, .SDcols = c("date", "location", "total_cases")]
+mem_after  <- mem_used()
+
+mem_comp <- tibble(
+  Stage = c("Before", "After selection", "Difference (MB)"),
+  MB    = c(round(as.numeric(mem_before)/1024^2,2),
+            round(as.numeric(mem_after)/1024^2,2),
+            round(as.numeric(mem_after - mem_before)/1024^2,2))
+)
+knitr::kable(mem_comp, caption = "Approximate memory usage during column selection")
+
+# Clean up
+rm(efficient_select); gc()
+```
+
+---
+
+# 5. Working with dplyr Efficiently
+
+## 5.1 Reading Large Files with readr
+
+**Hint**: `readr::read_csv()` is fast and type‑aware; great when you want tidyverse compatibility.
+
+```{r dplyr-basics}
+# Example: read selected columns and parse types
+covid_df <- read_csv(covid_file, 
+                     col_types = cols(
+                       date         = col_date(),
+                       total_cases  = col_double(),
+                       total_deaths = col_double(),
+                       population   = col_double()
+                     ),
+                     progress = TRUE)
+
+tbl_summary <- tibble(Rows = nrow(covid_df), Columns = ncol(covid_df))
+knitr::kable(tbl_summary, caption = "COVID‑19 data loaded with readr::read_csv()")
+```
+
+## 5.2 dplyr Operations on Large Data
+
+```{r dplyr-operations}
+# Example 1: Filter & select (United States)
+us_data_dplyr <- covid_df %>%
+  filter(location == "United States" & !is.na(total_cases)) %>%
+  select(date, total_cases, total_deaths, new_cases, population) %>%
+  arrange(desc(total_cases))
+
+knitr::kable(head(us_data_dplyr, 5), caption = sprintf("US data rows (showing 5 of %s)", format(nrow(us_data_dplyr), big.mark=",")))
+
+# Example 2: Grouped summaries
+authoritative <- covid_df %>%
+  group_by(continent, location) %>%
+  summarise(
+    max_cases    = max(total_cases,  na.rm = TRUE),
+    max_deaths   = max(total_deaths, na.rm = TRUE),
+    avg_new_cases = mean(new_cases,  na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(max_cases))
+
+knitr::kable(slice_head(authoritative, n = 5), caption = "Top 5 countries by total cases (dplyr)")
+```
+
+## 5.3 Chunk Processing with dplyr (readr)
+
+**Why use chunks?** When files exceed memory, process sequential pieces and combine summaries.  
+**How to run**: The chunk below is intensive—uncomment to run interactively.
+
+```{r chunk-processing, eval=FALSE}
+process_in_chunks <- function(file_path, chunk_size = 100000) {
+  callback <- function(x, pos) {
+    x %>%
+      filter(!is.na(total_cases) & total_cases > 0) %>%
+      group_by(location) %>%
+      summarise(
+        avg_cases = mean(new_cases, na.rm = TRUE),
+        max_cases = max(total_cases, na.rm = TRUE),
+        rows_processed = n(),
+        .groups = 'drop'
+      )
+  }
+  read_csv_chunked(
+    file_path,
+    callback = DataFrameCallback$new(callback),
+    chunk_size = chunk_size,
+    col_types = cols(.default = col_character())
+  )
+}
+
+# chunked_result <- process_in_chunks(covid_file, chunk_size = 50000)
+# head(chunked_result)
+```
+
+---
+
+# 6. Performance Comparison
+
+## 6.1 Benchmarking data.table vs dplyr
+
+```{r benchmarking}
+sample_size <- 100000
+sample_dt <- covid_dt[sample(.N, min(sample_size, .N))]
+sample_df <- as.data.frame(sample_dt)
+
+# Benchmark 1: Filtering
+bm_filter <- microbenchmark(
+  data.table = sample_dt[location == "United States" & total_cases > 1000],
+  dplyr      = sample_df %>% filter(location == "United States" & total_cases > 1000),
+  times = 10
+)
+
+# Benchmark 2: Group + summarise
+bm_group <- microbenchmark(
+  data.table = sample_dt[, .(avg_cases = mean(new_cases, na.rm = TRUE)), by = continent],
+  dplyr      = sample_df %>% group_by(continent) %>% summarise(avg_cases = mean(new_cases, na.rm = TRUE), .groups='drop'),
+  times = 10
+)
+
+bm_filter; bm_group
+
+# Visualise filtering results
+ggplot(bm_filter, aes(x = expr, y = time/1e6)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Filtering Performance Comparison", x = "Method", y = "Time (milliseconds)") +
+  theme_minimal()
+```
+
+## 6.2 Memory Usage Comparison
+
+```{r memory-comparison}
+compare_memory_usage <- function() {
+  # data.table path
+  mem_dt_before <- mem_used()
+  dt_result <- covid_dt[, .(total = sum(total_cases, na.rm = TRUE)), by = continent]
+  mem_dt_after  <- mem_used()
+  rm(dt_result); gc()
+
+  # dplyr path
+  mem_dplyr_before <- mem_used()
+  dplyr_result <- covid_df %>% group_by(continent) %>% summarise(total = sum(total_cases, na.rm = TRUE), .groups='drop')
+  mem_dplyr_after  <- mem_used()
+
+  tibble(
+    Method = c("data.table", "dplyr"),
+    Memory_Used_MB = round(as.numeric(c(mem_dt_after - mem_dt_before, mem_dplyr_after - mem_dplyr_before))/1024^2, 2)
+  )
+}
+
+memory_comparison <- compare_memory_usage()
+knitr::kable(memory_comparison, caption = "Approximate memory used by operation (MB)")
+```
+
+---
+
+# 7. Practical Exercises
+
+## Exercise 1: COVID‑19 Data Analysis
+
+**Task 1.1 — Top 10 countries by total cases**  
+*Hint:* Use `max(total_cases)` by `location`.
+
+**Task 1.2 — Case fatality rate (CFR)**  
+Compute CFR = `total_deaths / total_cases` by `location`; filter countries with at least 1,000 cases.
+
+**Task 1.3 — Daily growth rate**  
+Compute growth rate for `new_cases` using `shift()` (data.table) or `lag()` (dplyr).
+
+## Exercise 2: Air Pollution Analysis
+
+**Dataset load**:
+
+```{r exercise-2-load}
+air_data <- fread(air_file)
+# Quick info
+knitr::kable(tibble(Rows = nrow(air_data), Columns = ncol(air_data)), caption = "Air pollution dataset size")
+```
+
+**Task 2.1 — City analysis**  
+Find cities with highest pollution; group by city and compute relevant averages.
+
+**Task 2.2 — Temporal trends**  
+Analyse change over years; create a simple time‑series visualisation.
+
+**Task 2.3 — Regional comparison**  
+Compare pollution levels across regions/countries.
+
+---
+
+# 8. Best Practices and Tips
+
+## 8.1 Memory Management
+
+1. **Use appropriate types**: convert character to factor for repeated categories.  
+2. **Remove unused columns**: load/select only what you need.  
+3. **Process in chunks**: for very large files, use `readr::read_csv_chunked()` or databases.  
+4. **Clear memory regularly**: `rm()` then `gc()`.  
+5. **Disk‑based structures**: consider `ff`, `bigmemory`, or database backends.
+
+## 8.2 Performance Optimisation
+
+1. **Use data.table for speed**: especially beyond ~1M rows.  
+2. **Avoid copies**: prefer in‑place updates (`:=` in data.table).  
+3. **Keys and indexing**: set keys for frequent joins/subsets.  
+4. **Parallel processing**: use `parallel`, `future`, or `foreach` for CPU‑bound tasks.
+
+## 8.3 Data Storage
+
+1. **Use fst or feather/arrow** for fast read/write.  
+2. **Databases**: `RSQLite`, `duckdb` for very large/tabular data.  
+3. **Arrow/Parquet**: efficient columnar storage and out‑of‑memory analytics.  
+4. **Compression**: `saveRDS(..., compress=TRUE)` to reduce file size.
+
+---
+
+# 9. Additional Resources
+
+**Documentation**  
+- data.table: <https://rdatatable.gitlab.io/data.table/>  
+- dplyr: <https://dplyr.tidyverse.org/>  
+- readr: <https://readr.tidyverse.org/>
+
+**Books**  
+- *R for Data Science* — <https://r4ds.had.co.nz/>  
+- *Efficient R Programming* — <https://csgillespie.github.io/efficientR/>
+
+**Online Courses**  
+- DataCamp: *Working with Large Datasets in R*  
+- Coursera: *Big Data Analysis with R and Hadoop*  
+- Udemy: *R Programming for Data Science*
+
+---
+
+# 10. Summary
+
+**Key takeaways**  
+✓ **data.table** offers superior speed for large datasets  
+✓ **dplyr** provides intuitive syntax and works well with medium datasets  
+✓ **Memory management** is crucial when working with large data  
+✓ **Chunk processing** enables handling of very large files  
+✓ **Choose the right tool** for your use case and **profile** bottlenecks
+
+**Next steps**  
+1. Practice with the exercises  
+2. Apply these techniques to your own datasets  
+3. Explore advanced topics: parallel processing, out‑of‑memory computation  
+4. Engage with the R community for support and learning
+
+---
+
+# Appendix: Complete Code Examples
+
+```{r appendix, echo=TRUE, eval=FALSE}
+# Save processed objects
+saveRDS(covid_dt, "output/covid_data_processed.rds")
+write.csv(us_data_dplyr, "output/us_covid_data.csv", row.names = FALSE)
+
+# Generate a report of memory usage
+sink("output/memory_report.txt")
+print(get_memory_status())
+sink()
+```
+
+---
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

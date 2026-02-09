@@ -1,0 +1,697 @@
+---
+title: "Building Web Apps with Shiny in R"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+# Setup chunk
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = 'center',
+  out.width = "90%",
+  cache = FALSE
+)
+
+# Load required packages
+# If not installed, run: install.packages(c("shiny","ggplot2","dplyr","shinythemes","rsconnect"))
+library(shiny)
+library(ggplot2)
+library(dplyr)
+```
+
+# Building Web Apps with Shiny in R
+
+## Welcome to Shiny Training
+Shiny lets you turn your R analysis into interactive web applications — **no web development experience required**. In this manual, each section includes:
+
+- **Concept**: What you need to know
+- **Why it matters**: Common use cases
+- **Try it**: Minimal reproducible examples
+- **Tips**: Practical advice to avoid common pitfalls
+
+> **How to run code with Shiny in R Markdown**  
+> Shiny apps launched with `shinyApp()` will open a live app and can interrupt knitting. In this guide, most app chunks are set to `eval=FALSE` so the document knits. **To run an app**, copy its code to a standalone `app.R` or remove `eval=FALSE` and run the chunk interactively in RStudio.
+
+---
+
+## Section 1: SHINY BASICS
+
+### 1.1 What is Shiny?
+**Shiny** is an R package that makes it easy to build interactive web apps.
+
+**Key ideas**
+- **Shiny = R + Web Browser**  
+  You write R code → Shiny renders a website in your browser.
+- Two main parts:
+  1. **UI (User Interface)** — What users see and interact with
+  2. **Server** — The R code that processes inputs and returns outputs
+
+**When to use it**
+- Sharing data exploration tools with colleagues/stakeholders  
+- Building interactive dashboards, prototypes, teaching tools
+
+### 1.2 Your First Shiny App (3 lines)
+
+```{r first-hello, eval=FALSE}
+library(shiny)
+ui <- fluidPage("Hello World!")
+server <- function(input, output) {}
+shinyApp(ui = ui, server = server)
+```
+
+### 1.3 A Slightly Richer Example
+
+```{r first-plot-app, eval=FALSE}
+# Create and run a simple app with a base R plot
+app1 <- shinyApp(
+  ui = fluidPage(
+    h1("My First Shiny App"),
+    p("This is a simple paragraph."),
+    plotOutput("myplot")
+  ),
+  server = function(input, output) {
+    output$myplot <- renderPlot({
+      plot(cars$speed, cars$dist,
+           main = "Car Speed vs Distance",
+           xlab = "Speed (mph)",
+           ylab = "Distance (ft)",
+           pch = 16, col = "blue")
+    })
+  }
+)
+
+# Run it (in RStudio, you can also click "Run App")
+# runApp(app1)
+```
+
+**Tips**
+- Start small and add features incrementally.  
+- Keep the UI tidy; users should instantly know what to do.
+
+---
+
+## Section 2: BUILDING THE USER INTERFACE (UI)
+
+### 2.1 Basic UI Elements
+Common UI functions you will use often:
+
+- `h1()`, `h2()`, `h3()` — Headers  
+- `p()` — Paragraph text  
+- `plotOutput()` — Display plots  
+- `tableOutput()` — Display tables  
+- `textOutput()` — Display text  
+- `sidebarLayout()` — Create a sidebar/main area layout
+
+### 2.2 Layout Examples
+
+```{r ui-layout-examples, eval=FALSE}
+# Example 1: Basic layout with sidebar
+ui_basic <- fluidPage(
+  titlePanel("My App Title"),
+  sidebarLayout(
+    sidebarPanel(
+      h3("Controls"),
+      p("Adjust the settings here")
+    ),
+    mainPanel(
+      h3("Results"),
+      plotOutput("plot1")
+    )
+  )
+)
+
+# Example 2: Tabs layout
+ui_tabs <- fluidPage(
+  titlePanel("Multi-tab App"),
+  tabsetPanel(
+    tabPanel("Plot",  plotOutput("plot")),
+    tabPanel("Table", tableOutput("table")),
+    tabPanel("Summary", verbatimTextOutput("summary"))
+  )
+)
+```
+
+**Why these layouts**
+- `sidebarLayout()` is excellent for **controls on the left, results on the right**.
+- `tabsetPanel()` keeps multiple views organized without overwhelming the page.
+
+### 2.3 Input Controls
+Inputs let users interact with your app.
+
+**Common inputs**
+- `sliderInput()` — numeric sliders  
+- `selectInput()` — dropdown menus  
+- `textInput()` — free text  
+- `numericInput()` — numeric box  
+- `dateInput()` — select dates  
+- `checkboxInput()` — boolean toggle  
+- `radioButtons()` — choose one option
+
+**Example UI with inputs**
+
+```{r ui-with-inputs, eval=FALSE}
+ui_with_inputs <- fluidPage(
+  titlePanel("App with Inputs"),
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("number", "Choose a number:", min = 1, max = 100, value = 50),
+      selectInput("color",  "Choose color:", choices = c("Red", "Blue", "Green"), selected = "Blue"),
+      checkboxInput("show_line", "Show trend line", value = TRUE)
+    ),
+    mainPanel(plotOutput("my_plot"))
+  )
+)
+```
+
+**Tips**
+- Always provide sensible defaults.  
+- Use short, descriptive labels.
+
+---
+
+## Section 3: BUILDING THE SERVER FUNCTION
+
+### 3.1 How the Server Works
+The **server** function processes inputs and creates outputs.
+
+**Structure**
+```r
+server <- function(input, output) {
+  # Use input$ to read values from UI
+  # Create output$ objects to send to UI
+}
+```
+
+### 3.2 Render Functions
+- `renderPlot()` — for plots  
+- `renderTable()` — for tables  
+- `renderText()` — for plain text  
+- `renderPrint()` — for textual/printed output  
+- `renderUI()` — for dynamic UI elements
+
+### 3.3 Simple Server Example
+
+```{r simple-server-example, eval=FALSE}
+server_example <- function(input, output) {
+  # Create a plot based on inputs
+  output$my_plot <- renderPlot({
+    n_points   <- input$number
+    plot_color <- input$color
+    x <- rnorm(n_points)
+    y <- rnorm(n_points)
+    plot(x, y,
+         main = paste("Plot of", n_points, "points"),
+         col = tolower(plot_color), pch = 16, cex = 2)
+  })
+
+  # Create text output
+  output$info <- renderText({
+    paste("You selected", input$number, "and color", input$color)
+  })
+}
+```
+
+**Tips**
+- Keep server logic modular with **reactives** (see next section).  
+- Name your outputs clearly; match names in UI and server (e.g., `plotOutput("my_plot")` ↔ `output$my_plot`).
+
+---
+
+## Section 4: YOUR FIRST COMPLETE APP
+
+### 4.1 Complete Working App (Step-by-step)
+
+a) **Load Shiny**
+
+```{r step1-load, eval=FALSE}
+library(shiny)
+```
+
+b) **Build the UI**
+
+```{r step2-ui, eval=FALSE}
+ui <- fluidPage(
+  titlePanel("Simple Data Explorer"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("dataset", "Choose dataset:", choices = c("cars", "iris", "mtcars")),
+      sliderInput("rows", "Number of rows to show:", min = 1, max = 50, value = 10),
+      radioButtons("plot_type", "Plot type:", choices = c("Histogram", "Scatter", "Boxplot"))
+    ),
+    mainPanel(
+      plotOutput("plot"),
+      tableOutput("table")
+    )
+  )
+)
+```
+
+c) **Build the server**
+
+```{r step3-server, eval=FALSE}
+server <- function(input, output) {
+  # Get selected dataset
+  get_data <- reactive({
+    switch(input$dataset,
+           "cars" = cars,
+           "iris" = iris,
+           "mtcars" = mtcars)
+  })
+
+  # Create plot
+  output$plot <- renderPlot({
+    data <- get_data()
+    if (input$plot_type == "Histogram") {
+      hist(data[[1]], main = paste("Histogram of", names(data)[1]), col = "lightblue", xlab = names(data)[1])
+    } else if (input$plot_type == "Scatter") {
+      if (ncol(data) >= 2) {
+        plot(data[[1]], data[[2]],
+             main = paste(names(data)[1], "vs", names(data)[2]),
+             xlab = names(data)[1], ylab = names(data)[2], pch = 16, col = "red")
+      }
+    } else if (input$plot_type == "Boxplot") {
+      boxplot(data, main = "Boxplot", col = "lightgreen")
+    }
+  })
+
+  # Create table
+  output$table <- renderTable({
+    data <- get_data()
+    head(data, input$rows)
+  })
+}
+```
+
+d) **Run the app**
+
+```{r step4-run, eval=FALSE}
+shinyApp(ui = ui, server = server)
+```
+
+**Tips**
+- Use `reactive()` to avoid recomputing expensive operations.  
+- Cache derived objects when possible; avoid heavy work inside `render*()` repeatedly.
+
+---
+
+## Section 5: PRACTICE APPS
+
+### 5.1 App 1: Calculator App
+
+```{r app1-calculator, eval=FALSE}
+library(shiny)
+
+ui <- fluidPage(
+  titlePanel("Simple Calculator"),
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("num1", "First number:", value = 10),
+      numericInput("num2", "Second number:", value = 5),
+      selectInput("operation", "Operation:", choices = c("Add", "Subtract", "Multiply", "Divide"))
+    ),
+    mainPanel(
+      h3("Result:"), textOutput("result"), br(),
+      h4("Calculation details:"), verbatimTextOutput("details")
+    )
+  )
+)
+
+server <- function(input, output) {
+  output$result <- renderText({
+    num1 <- input$num1; num2 <- input$num2
+    result <- switch(input$operation,
+                     "Add" = num1 + num2,
+                     "Subtract" = num1 - num2,
+                     "Multiply" = num1 * num2,
+                     "Divide" = num1 / num2)
+    paste("The result is:", result)
+  })
+
+  output$details <- renderPrint({
+    cat("First number:", input$num1, "\n")
+    cat("Second number:", input$num2, "\n")
+    cat("Operation:", input$operation, "\n")
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+**Learning goals**
+- Practice reading from `input$` and writing to `output$`.  
+- Use `switch()` for simple logic.
+
+### 5.2 App 2: Data Explorer App
+
+```{r app2-data-explorer, eval=FALSE}
+library(shiny)
+library(ggplot2)
+
+ui <- fluidPage(
+  titlePanel("Data Explorer"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("dataset", "Dataset:", choices = c("iris", "mtcars", "diamonds")),
+      uiOutput("xvar"),
+      uiOutput("yvar"),
+      selectInput("plot_type", "Plot type:", choices = c("scatter", "histogram", "density")),
+      checkboxInput("smooth", "Add trend line", FALSE)
+    ),
+    mainPanel(
+      plotOutput("plot"), br(),
+      h4("Data summary:"), verbatimTextOutput("summary")
+    )
+  )
+)
+
+server <- function(input, output) {
+  get_data <- reactive({
+    switch(input$dataset,
+           "iris" = iris,
+           "mtcars" = mtcars,
+           "diamonds" = diamonds[1:1000, ])  # Smaller sample for diamonds
+  })
+
+  output$xvar <- renderUI({
+    data <- get_data()
+    selectInput("xvar", "X variable:", choices = names(data))
+  })
+
+  output$yvar <- renderUI({
+    data <- get_data()
+    selectInput("yvar", "Y variable:", choices = names(data))
+  })
+
+  output$plot <- renderPlot({
+    data <- get_data()
+    req(input$xvar)
+    if (input$plot_type == "scatter") {
+      req(input$yvar)
+      p <- ggplot(data, aes_string(x = input$xvar, y = input$yvar)) +
+        geom_point(color = "blue", size = 3, alpha = 0.6)
+      if (input$smooth) p <- p + geom_smooth(method = "lm", color = "red")
+    } else if (input$plot_type == "histogram") {
+      p <- ggplot(data, aes_string(x = input$xvar)) +
+        geom_histogram(fill = "lightblue", color = "black", bins = 30)
+    } else if (input$plot_type == "density") {
+      p <- ggplot(data, aes_string(x = input$xvar)) +
+        geom_density(fill = "lightgreen", alpha = 0.5)
+    }
+    p + theme_minimal()
+  })
+
+  output$summary <- renderPrint({
+    data <- get_data()
+    summary(data)
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+**Learning goals**
+- Build **dynamic UI** with `renderUI()` + `uiOutput()`.  
+- Practice ggplot2 with user-selected variables.
+
+### 5.3 App 3: File Upload App
+
+```{r app3-file-upload, eval=FALSE}
+library(shiny)
+
+ui <- fluidPage(
+  titlePanel("CSV File Explorer"),
+  sidebarLayout(
+    sidebarPanel(
+      fileInput("file", "Choose CSV file",
+                accept = c("text/csv", "text/comma-separated-values,text/plain", ".csv")),
+      checkboxInput("header", "Header", TRUE),
+      radioButtons("sep", "Separator", choices = c(Comma = ",", Semicolon = ";", Tab = "\t"), selected = ","),
+      sliderInput("rows", "Rows to show:", min = 1, max = 100, value = 10)
+    ),
+    mainPanel(
+      h3("Data Preview"), tableOutput("contents"),
+      h3("Data Summary"), verbatimTextOutput("summary"),
+      h3("Column Names"), verbatimTextOutput("names")
+    )
+  )
+)
+
+server <- function(input, output) {
+  get_data <- reactive({
+    req(input$file)
+    read.csv(input$file$datapath, header = input$header, sep = input$sep)
+  })
+
+  output$contents <- renderTable({ head(get_data(), input$rows) })
+  output$summary  <- renderPrint({ summary(get_data()) })
+  output$names    <- renderPrint({ names(get_data()) })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+**Learning goals**
+- Work with uploads using `fileInput()` and `req()`.  
+- Provide fast **previews** without loading entire large files.
+
+---
+
+## Section 6: STYLING AND LAYOUT
+
+### 6.1 Basic Styling with CSS
+
+```{r styling-css, eval=FALSE}
+ui_styled <- fluidPage(
+  tags$head(
+    tags$style(HTML("\n      body { background-color: #f0f0f0; }\n      .sidebar { background-color: white; padding: 20px; }\n      h1 { color: darkblue; }\n    "))
+  ),
+  titlePanel("Styled App"),
+  sidebarLayout(
+    sidebarPanel(
+      class = "sidebar",
+      h3("Controls", style = "color: darkred;"),
+      sliderInput("n", "Number:", 1, 100, 50)
+    ),
+    mainPanel(plotOutput("plot"))
+  )
+)
+```
+
+**Tip**: Use **CSS classes** to apply consistent styles across elements.
+
+### 6.2 Using Themes (shinythemes)
+
+```{r styling-themes, eval=FALSE}
+# install.packages("shinythemes")
+library(shinythemes)
+
+ui_themed <- fluidPage(
+  theme = shinytheme("superhero"),  # Try: cerulean, darkly, flatly, superhero
+  titlePanel("Themed App"),
+  fluidRow(
+    column(4, wellPanel(h4("Input Panel"), sliderInput("bins", "Number of bins:", 1, 50, 30))),
+    column(8, plotOutput("distPlot"))
+  )
+)
+```
+
+**Tip**: Themes provide a quick, cohesive look; for production branding, add your own CSS on top.
+
+### 6.3 Advanced Layouts (Grid)
+
+```{r advanced-layout-grid, eval=FALSE}
+ui_grid <- fluidPage(
+  titlePanel("Grid Layout Example"),
+  fluidRow(
+    column(3, h4("Column 1 - 25% width"), sliderInput("s1", "Slider 1:", 1, 100, 50)),
+    column(3, h4("Column 2 - 25% width"), selectInput("s2", "Select:", choices = letters[1:5])),
+    column(6, h4("Column 3 - 50% width"), plotOutput("plot1"), plotOutput("plot2"))
+  ),
+  fluidRow(
+    column(12, h4("Full width row"), tableOutput("table"))
+  )
+)
+```
+
+**Tip**: Use `fluidRow()`/`column()` to design responsive layouts for different screen sizes.
+
+---
+
+## Section 7: DEPLOYING YOUR APP
+
+### 7.1 Ways to Deploy
+
+Below is a quick overview of common deployment options.
+
+```{r deploy-table}
+deploy_methods <- data.frame(
+  Method   = c("RStudio Cloud (Free)", "shinyapps.io", "Shiny Server", "Your own server"),
+  Cost     = c("Free", "Free tier available", "Open source or Pro", "Server costs"),
+  Best_for = c("Learning, small apps", "Small–medium apps", "Organization use", "Full control")
+)
+knitr::kable(deploy_methods, align = 'l')
+```
+
+**Notes**
+- **shinyapps.io** is the quickest way to share prototypes.  
+- **Shiny Server** (Open Source/Pro) is best for on-prem/team deployments.
+
+### 7.2 Deploying to shinyapps.io (Free)
+
+```{r deploy-steps, eval=FALSE}
+# Step 1: Install deployment tools
+# install.packages('rsconnect')
+
+# Step 2: Save your app in a folder (e.g., my_app/ with app.R)
+
+# Step 3: Set up shinyapps.io account
+# Go to: https://www.shinyapps.io/
+# Create a free account
+
+# Step 4: Deploy from RStudio
+library(rsconnect)
+# rsconnect::setAccountInfo(name = "your-account-name", token = "your-token", secret = "your-secret")
+# deployApp("path/to/your/app")
+```
+
+**Tip**: Keep secrets **outside** your repo (use environment variables or .Renviron).
+
+---
+
+## Section 8: EXERCISES
+
+### 8.1 Beginner Exercises
+- **Hello Name**: Text input for name → button → greeting text.  
+- **BMI Calculator**: Inputs height (cm) & weight (kg) → compute BMI = weight/(height/100)^2 → show category.  
+- **Plot Generator**: Select plot type (histogram, scatter, boxplot) + dataset (cars, iris, random) → customize colors/size → add **download** button.
+
+### 8.2 Intermediate Exercises
+- **Grade Calculator**: Five numeric inputs (0–100) → average + letter grade + distribution plot.  
+- **Data Filter App**: CSV upload → multi-column filtering → **download filtered CSV** → summary statistics.  
+- **Survey Results App**: Mixed inputs (radio, checkbox, text) → store responses (in memory or file) → real-time result plots → **reset** button.
+
+**Tips for exercises**
+- Sketch the UI (inputs/outputs) first; then implement server logic.  
+- Create small helper functions for repeated code.
+
+---
+
+## Section 9: TROUBLESHOOTING
+
+### 9.1 Common Errors and Solutions
+
+```{r troubleshooting-table}
+shiny_errors <- data.frame(
+  Error = c(
+    "object 'input' not found",
+    "could not find function 'renderPlot'",
+    "App not responding",
+    "Plot not updating",
+    "File upload not working"
+  ),
+  Cause = c(
+    "Using input outside server function",
+    "Forgot library(shiny)",
+    "Slow code blocking app",
+    "Reactive dependency missing",
+    "Wrong file path or format"
+  ),
+  Solution = c(
+    "All input$ must be inside server()",
+    "Add library(shiny) at top",
+    "Use reactive() and isolate()",
+    "Check what triggers update",
+    "Use input$file$datapath"
+  )
+)
+knitr::kable(shiny_errors, align = 'l')
+```
+
+### 9.2 Debugging Tips
+- **Print values** in render blocks to verify inputs/logic.
+- Use `observe({ ... })` to watch input changes; store state with `reactiveValues()`.
+- **Test in small pieces**: get the UI rendering first; then add one input at a time.
+- Pause execution with `browser()` inside a render function to inspect the environment:
+
+```r
+output$plot <- renderPlot({
+  browser()  # execution pauses here
+  plot(...)
+})
+```
+
+---
+
+## QUICK REFERENCE GUIDE
+
+```{r quick-ref}
+quick_ref <- data.frame(
+  Task   = c("Start app", "Text output", "Plot output", "Table output", 
+             "Slider input", "Dropdown", "Text input", "Checkbox",
+             "Reactive value", "Conditional UI", "Download button"),
+  Code   = c(
+    'shinyApp(ui, server)', 'textOutput("id")', 'plotOutput("id")', 'tableOutput("id")',
+    'sliderInput("id", "label", min, max, value)', 'selectInput("id", "label", choices)',
+    'textInput("id", "label")', 'checkboxInput("id", "label", value)', 'reactive({ })',
+    'conditionalPanel("condition", ...)', 'downloadButton("id", "label")'
+  ),
+  Render = c(
+    '', 'renderText({ })', 'renderPlot({ })', 'renderTable({ })',
+    '', '', '', '', '', '', 'downloadHandler()'
+  )
+)
+knitr::kable(quick_ref, align = 'l')
+```
+
+---
+
+## Final Project
+Create a **Personal Dashboard** app that includes:
+
+1. At least **3 different input types**  
+2. At least **2 different output types** (plot and table)  
+3. A **file upload** feature  
+4. **Download** capability  
+5. **Custom styling/theme**  
+6. Organized layout (**sidebar**, **tabs**, or **grid**)
+
+**Example ideas**: Personal finance tracker, fitness progress tracker, learning progress dashboard, simple CRM, project management tool.
+
+---
+
+## SUMMARY
+
+### Key Points to Remember
+- **UI** = What users see (inputs and outputs)  
+- **Server** = R code that runs (uses inputs to create outputs)  
+- **Reactivity** = Automatic updates when inputs change  
+- **Start simple** → get a basic app working first, then add features  
+- **Test often** → run the app after each change
+
+### Next Steps & Resources
+- Practice with the exercises above.  
+- Explore the **Shiny Gallery**: https://shiny.rstudio.com/gallery/  
+- Read **Shiny documentation**: https://shiny.rstudio.com/  
+- Join the **Shiny community**: https://community.rstudio.com/
+
+---
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

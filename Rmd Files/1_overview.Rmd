@@ -1,0 +1,680 @@
+---
+title: "Introduction to Big Data Analysis and Management Using R"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = 'center',
+  cache = TRUE,
+  cache.lazy = FALSE,
+  out.width = "90%"
+)
+
+# Load only essential packages
+library(knitr)
+
+# Set global options
+options(digits = 4, scipen = 999)
+
+# Create directories if they don't exist
+if (!dir.exists("data")) dir.create("data")
+if (!dir.exists("output")) dir.create("output")
+if (!dir.exists("figures")) dir.create("figures")
+```
+
+# Section 1: R Basics and Data Structures
+
+## Welcome to the Big Data Analysis and Management Training Program
+
+Welcome to the first section of our comprehensive training program! In this section, we'll introduce you to **R programming fundamentals** with a focus on **data structures** and **essential functions** for data analysis.
+
+> **What you’ll learn**
+> 1) basic R syntax and data types  
+> 2) vectors, matrices, and data frames  
+> 3) essential base R functions for data manipulation  
+> 4) data exploration and analysis  
+> 5) memory‑efficient coding practices
+
+---
+
+# Best Practices and Tips
+
+## RStudio Shortcuts
+
+- **Ctrl+Enter**: Execute current line or selection  
+- **Ctrl+Shift+S**: Source the entire script  
+- **Ctrl+Shift+C**: Comment/uncomment selected lines  
+- **Tab**: Auto-complete function and variable names  
+- **Ctrl+Space**: Show suggestions for auto-completion  
+- **Ctrl+Shift+M**: Insert pipe operator `%>%` (when using dplyr)  
+- **Ctrl+Shift+R**: Insert code section
+
+## Memory Management Tips
+
+1. **Remove unused objects**: Use `rm(object_name)` regularly  
+2. **Force garbage collection**: Call `gc()` after large operations  
+3. **Process in chunks**: For very large files, read and process in batches  
+4. **Use appropriate data types**: Convert characters to factors when appropriate
+
+## Debugging Tips
+
+1. **Check for typos**: R is case-sensitive (`myVar` ≠ `myvar`)  
+2. **Use `str()`**: Examine object structure  
+3. **Check for NA values**: Use `is.na()` or `complete.cases()`  
+4. **Read error messages carefully**: They often tell you exactly what's wrong  
+5. **Break complex operations**: Debug each step separately  
+6. **Test with small data**: Debug with subsets before running on full data
+
+## Coding Style Guidelines
+
+1. **Use meaningful variable names**: `customer_age` not `ca`  
+2. **Add comments**: Explain *why*, not just *what*  
+3. **Consistent indentation**: Use 2 or 4 spaces (not tabs)  
+4. **Limit line length**: 80 characters per line  
+5. **Use functions**: Encapsulate repetitive code
+
+---
+
+# 1. Introduction to R Programming
+
+## What is R?
+
+R is a powerful programming language and environment specifically designed for statistical computing, data analysis, and visualization. It was created by Ross Ihaka and Robert Gentleman at the University of Auckland and is now maintained by the R Development Core Team.
+
+**Key Features of R**
+- **Open-source and free**  
+- **Extensive package ecosystem**  
+- **Excellent statistical capabilities**  
+- **Cross-platform compatibility**  
+- **Active community support**
+
+## RStudio: Your Development Environment
+
+RStudio is an Integrated Development Environment (IDE) that makes working with R more efficient. It provides:
+- Script editor for writing code  
+- Console for executing commands  
+- Environment pane for variable management  
+- Plots pane for visualizations  
+- Help and documentation viewer
+
+---
+
+# 2. Basic R Operations and Syntax
+
+## Your First R Commands
+
+**Instructions**  
+- Run the following chunk to compute common mathematical results.  
+- We show the output as a tidy table for clarity.  
+- Remember: Comments start with `#` — they’re ignored by R.  
+- Comments start with `#` – they’re ignored by R.
+
+```{r first-commands, eval=TRUE, cache=FALSE}
+# Basic arithmetic operations
+add       <- 2 + 3        # Addition
+sub       <- 10 - 4       # Subtraction
+mul       <- 5 * 6        # Multiplication
+div       <- 20 / 4       # Division
+pow       <- 2 ^ 3        # Exponentiation
+sqrt_val  <- sqrt(25)     # Square root
+log_val   <- log(10)      # Natural logarithm
+exp_val   <- exp(1)       # Exponential function
+
+# Mathematical constants
+pi_val    <- pi           # Pi constant
+euler_val <- exp(1)       # Euler's number
+
+# Present results as a table
+ops_tbl <- data.frame(
+  Operation = c(
+    "Addition (2 + 3)", "Subtraction (10 - 4)", "Multiplication (5 * 6)",
+    "Division (20 / 4)", "Exponentiation (2 ^ 3)", "Square root sqrt(25)",
+    "Natural log log(10)", "Exponential exp(1)", "Pi", "Euler's number"
+  ),
+  Value = c(add, sub, mul, div, pow, sqrt_val, log_val, exp_val, pi_val, euler_val)
+)
+knitr::kable(ops_tbl, align = 'l')
+```
+
+## Variables and Assignment
+
+**Why it matters**  
+Variables store data for reuse and readability. Prefer `<-` for assignment in R scripts; `=` also works.
+
+```{r variables, cache=FALSE}
+# Variable assignment using <-
+my_number      <- 42
+my_text        <- "Hello, R World!"
+my_calculation <- 10 * 5 + 3
+
+# Multiple assignments
+x <- 10; y <- 20; z <- x + y
+
+# You can also use = for assignment (though <- is preferred)
+result = 100 / 4
+
+vars_tbl <- data.frame(
+  Name  = c("my_number","my_text","my_calculation","x","y","z","result"),
+  Value = I(list(my_number, my_text, my_calculation, x, y, z, result))
+)
+knitr::kable(vars_tbl, align = 'l')
+```
+
+---
+
+# 3. Understanding R Data Types
+
+## Basic Data Types
+
+**Learn**  
+R has several fundamental data types that determine how data is stored and processed.
+
+```{r data-types, cache=FALSE}
+# 1. Numeric: Decimal numbers
+numeric_value  <- 3.14159
+# 2. Integer: Whole numbers (use L suffix)
+integer_value  <- 42L
+# 3. Character: Text strings
+character_value <- "Data Analysis"
+# 4. Logical: Boolean values (TRUE/FALSE)
+logical_value  <- TRUE
+# 5. Complex: Complex numbers
+complex_value  <- 3 + 2i
+
+# Compare class vs typeof
+types_tbl <- data.frame(
+  Object   = c("numeric_value","integer_value","character_value","logical_value","complex_value",
+               "class(42)","typeof(42)","class(42L)","typeof(42L)"),
+  Value    = c(as.character(numeric_value), as.character(integer_value), character_value,
+               as.character(logical_value), as.character(complex_value),
+               paste(class(42), collapse=","), typeof(42), paste(class(42L), collapse=","), typeof(42L))
+)
+knitr::kable(types_tbl, align='l')
+```
+
+## Type Conversion Functions
+
+**Tip**  
+Use `as.<type>()` to convert between data types; check with `is.<type>()`.
+
+```{r type-conversion, cache=FALSE}
+num_as_char <- as.character(123.45)
+char_as_num <- as.numeric("456.78")
+num_as_int  <- as.integer(99.99)
+log_as_num  <- as.numeric(TRUE)
+
+conv_tbl <- data.frame(
+  Conversion = c("Number -> character","Character -> numeric","Numeric -> integer","Logical -> numeric"),
+  Result     = c(num_as_char, char_as_num, num_as_int, log_as_num),
+  Type       = c(typeof(num_as_char), typeof(char_as_num), typeof(num_as_int), typeof(log_as_num))
+)
+knitr::kable(conv_tbl, align='l')
+
+check_tbl <- data.frame(
+  Check = c("is.numeric(123)", "is.character('text')", "is.logical(TRUE)", "is.integer(42L)"),
+  Value = c(is.numeric(123), is.character("text"), is.logical(TRUE), is.integer(42L))
+)
+knitr::kable(check_tbl, align='l')
+```
+
+---
+
+# 4. Working with Vectors
+
+## Creating Vectors
+
+Vectors are the most basic data structure in R—sequences of elements of the same type.
+
+```{r vector-creation, cache=FALSE}
+# 1. Using c() function (combine)
+numeric_vector   <- c(1.5, 2.3, 4.7, 9.1)
+character_vector <- c("apple", "banana", "cherry")
+logical_vector   <- c(TRUE, FALSE, TRUE, TRUE, FALSE)
+
+numeric_vector; character_vector; logical_vector
+
+# 2. Using sequence functions
+seq_1_to_10 <- 1:10
+seq_by_2    <- seq(1, 20, by = 2)
+
+seq_1_to_10; seq_by_2
+```
+
+## Vector Operations
+
+```{r vector-operations, cache=FALSE}
+# Create example vectors
+v1 <- c(1, 2, 3, 4, 5)
+v2 <- c(6, 7, 8, 9, 10)
+
+# 1. Arithmetic operations (element-wise)
+add_vec <- v1 + v2
+
+# 2. Statistical operations
+stats_tbl <- data.frame(
+  Metric = c("Sum","Mean","Median","SD","Variance","Min","Max","Range_low","Range_high","Length"),
+  Value  = c(sum(v1), mean(v1), median(v1), sd(v1), var(v1), min(v1), max(v1), range(v1)[1], range(v1)[2], length(v1))
+)
+
+# 3. Vector manipulation
+manip_tbl <- data.frame(
+  Operation = c("Sorted v1","Reverse sorted v1","Unique of c(1,2,2,3,3,3)"),
+  Result    = I(list(sort(v1), sort(v1, decreasing = TRUE), unique(c(1,2,2,3,3,3))))
+)
+
+# 4. Vector indexing examples
+idx_list <- list(
+  first_element = v1[1],
+  last_element  = v1[length(v1)],
+  elements_2_to_4 = v1[2:4],
+  specific_1_3_5 = v1[c(1,3,5)],
+  all_except_3   = v1[-3],
+  elements_gt_3  = v1[v1 > 3]
+)
+
+list(
+  elementwise_addition = add_vec,
+  statistics = stats_tbl,
+  manipulation = manip_tbl,
+  indexing_examples = idx_list
+)
+```
+
+## Special Vector Functions
+
+```{r vector-functions, cache=FALSE}
+vec <- c(3, 1, 4, 1, 5, 9, 2, 6, 5, 3)
+which_first_eq_5 <- which(vec == 5)[1]
+which_max_idx    <- which.max(vec)
+which_min_idx    <- which.min(vec)
+
+res_tbl <- data.frame(
+  Description = c("First index where vec == 5","Index of maximum value","Index of minimum value"),
+  Index       = c(which_first_eq_5, which_max_idx, which_min_idx)
+)
+knitr::kable(res_tbl, align='l')
+```
+
+## Exercise 1: Vector Operations
+
+```{r ex1, eval=FALSE}
+# 1. Create a vector of 100 random numbers between 1 and 100
+# 2. Calculate the mean, median, and standard deviation
+# 3. Find all numbers greater than 75
+# 4. Replace all numbers less than 25 with NA
+# 5. Sort the vector in descending order
+```
+
+---
+
+# 5. Working with Matrices
+
+## Creating Matrices
+
+Matrices are two-dimensional arrays with rows and columns.
+
+```{r matrix-creation, cache=FALSE}
+# 1. Using matrix() function
+mat1 <- matrix(1:12, nrow = 3, ncol = 4)
+mat1
+
+mat2 <- matrix(1:12, nrow = 3, ncol = 4, byrow = TRUE)
+mat2
+
+# 2. Using rbind() and cbind()
+row1 <- c(1, 2, 3)
+row2 <- c(4, 5, 6)
+row3 <- c(7, 8, 9)
+mat_rbind <- rbind(row1, row2, row3)
+mat_rbind
+
+col1 <- c(1, 4, 7)
+col2 <- c(2, 5, 8)
+col3 <- c(3, 6, 9)
+mat_cbind <- cbind(col1, col2, col3)
+mat_cbind
+```
+
+## Matrix Operations and Properties
+
+```{r matrix-operations, cache=FALSE}
+A <- matrix(1:4, nrow = 2, ncol = 2)
+B <- matrix(c(2, 0, 0, 2), nrow = 2, ncol = 2)
+
+list(Matrix_A = A, Matrix_B = B)
+
+# 1. Basic element-wise operations
+A_plus_B <- A + B
+
+# 2. Matrix properties
+props_tbl <- data.frame(
+  Property = c("dim(A)", "nrow(A)", "ncol(A)", "length(A)"),
+  Value    = c(paste(dim(A), collapse = "x"), nrow(A), ncol(A), length(A))
+)
+
+# 3. Transpose and diagonal
+A_transpose <- t(A)
+A_diag      <- diag(A)
+
+# 4. Indexing examples
+index_list <- list(
+  element_1_2   = A[1,2],
+  first_row     = A[1,],
+  second_column = A[,2],
+  submatrix_1_2 = A[1:2, 1:2]
+)
+
+# 5. Row/column summaries
+summary_tbl <- data.frame(
+  RowSums   = rowSums(A),
+  ColSums   = colSums(A),
+  RowMeans  = rowMeans(A),
+  ColMeans  = colMeans(A)
+)
+
+list(
+  A_plus_B = A_plus_B,
+  properties = props_tbl,
+  transpose = A_transpose,
+  diagonal  = A_diag,
+  indexing  = index_list,
+  summaries = summary_tbl
+)
+```
+
+## Exercise 2: Matrix Operations
+
+```{r ex2, eval=FALSE}
+# 1. Create a 5x5 matrix with random integers (1-100)
+# 2. Calculate the row sums and column means
+```
+
+---
+
+# 6. Working with Data Frames
+
+## Creating Data Frames
+
+Data frames are the most important data structure for data analysis—like Excel spreadsheets or database tables.
+
+```{r dataframe-creation, cache=FALSE}
+# 1. Creating data frames from vectors
+students <- data.frame(
+  StudentID = 1:5,
+  Name      = c("Alice", "Bob", "Charlie", "Diana", "Eve"),
+  Age       = c(22, 23, 21, 24, 22),
+  Grade     = c("A", "B+", "A-", "B", "A"),
+  Score     = c(95, 87, 92, 85, 96)
+)
+students
+
+# 2. Creating from existing vectors
+id         <- 101:105
+department <- c("Math", "Physics", "Chemistry", "Biology", "Computer Science")
+gpa        <- c(3.8, 3.5, 3.9, 3.2, 4.0)
+
+students2 <- data.frame(ID = id, Department = department, GPA = gpa)
+students2
+
+# 3. Adding columns
+students$Graduated <- c(TRUE, TRUE, FALSE, TRUE, FALSE)
+students
+
+# 4. Creating from matrix
+mat_data <- matrix(c(1:8, letters[1:8]), nrow = 4, ncol = 4)
+df_from_mat <- as.data.frame(mat_data)
+names(df_from_mat) <- c("ID", "Value1", "Value2", "Category")
+df_from_mat
+
+# 5. Using read.table() style
+text_data <- "Name,Age,City\nJohn,25,New York\nSarah,30,Chicago\nMike,28,Boston"
+
+df_from_text <- read.table(text = text_data, header = TRUE, sep = ",")
+df_from_text
+```
+
+## Data Frame Operations and Exploration
+
+```{r dataframe-operations, cache=FALSE}
+# Create a sample data frame for analysis
+set.seed(123)
+sample_data <- data.frame(
+  ID        = 1:100,
+  Age       = sample(18:65, 100, replace = TRUE),
+  Income    = round(rnorm(100, mean = 50000, sd = 15000), 0),
+  Education = sample(c("High School", "Bachelor", "Master", "PhD"), 100, replace = TRUE),
+  Employed  = sample(c(TRUE, FALSE), 100, replace = TRUE, prob = c(0.8, 0.2)),
+  Score     = round(runif(100, min = 50, max = 100), 1)
+)
+
+# Preview
+head(sample_data)
+
+# 1. Basic information
+info_list <- list(
+  Dimensions      = dim(sample_data),
+  N_rows          = nrow(sample_data),
+  N_cols          = ncol(sample_data),
+  Column_names    = names(sample_data)
+)
+info_list
+
+# 2. Structure and summary
+str(sample_data)
+summary(sample_data)
+
+# 3. Indexing examples
+first_row          <- sample_data[1, ]
+first_three_rows   <- sample_data[1:3, ]
+selected_cols_head <- head(sample_data[, c("ID", "Age", "Income")])
+first_age_values   <- head(sample_data$Age)
+
+list(first_row = first_row, first_three_rows = first_three_rows,
+     selected_cols_head = selected_cols_head, first_age_values = first_age_values)
+
+# 4. Subsetting with conditions
+high_income <- subset(sample_data, Income > 60000)
+head_high_income <- head(high_income)
+
+employed_masters <- subset(sample_data, Employed == TRUE & Education == "Master")
+head_employed_masters <- head(employed_masters)
+
+list(n_high_income = nrow(high_income), head_high_income = head_high_income,
+     n_employed_masters = nrow(employed_masters), head_employed_masters = head_employed_masters)
+
+# 5. Sorting
+sorted_by_income <- sample_data[order(sample_data$Income, decreasing = TRUE), ]
+head(sorted_by_income[, c("ID", "Age", "Income", "Education")], 5)
+
+sorted_by_age_income <- sample_data[order(sample_data$Age, -sample_data$Income), ]
+head(sorted_by_age_income[, c("ID", "Age", "Income")], 5)
+```
+
+## Data Frame Manipulation Functions
+
+```{r dataframe-manipulation, cache=FALSE}
+# 1. Adding and removing columns
+sample_data$Income_Adjusted <- sample_data$Income * 1.05  # Add 5%
+sample_data$Age_Group <- cut(sample_data$Age, breaks = c(18, 30, 45, 65), labels = c("Young", "Middle", "Senior"))
+head(sample_data[, c("Age", "Age_Group", "Income", "Income_Adjusted")])
+
+# Remove a column
+sample_data$Income_Adjusted <- NULL
+names(sample_data)
+
+# 2. Aggregation
+avg_income_by_education <- aggregate(Income ~ Education, data = sample_data, FUN = mean)
+avg_income_by_education
+
+count_by_education <- aggregate(ID ~ Education, data = sample_data, FUN = length)
+names(count_by_education) <- c("Education", "Count")
+count_by_education
+
+# Multiple aggregations
+multi_agg <- aggregate(cbind(Income, Score) ~ Education + Employed, data = sample_data, FUN = mean)
+multi_agg
+
+# 3. Table functions
+edu_table <- table(sample_data$Education)
+edu_table
+
+edu_emp_table <- table(sample_data$Education, sample_data$Employed)
+edu_emp_table
+
+prop.table(edu_table) |> round(3)
+
+# 4. Merging data frames
+set.seed(1)
+additional_info <- data.frame(
+  ID         = sample(1:100, 50),
+  Experience = sample(1:30, 50, replace = TRUE),
+  Skills     = sample(c("Technical", "Managerial", "Creative"), 50, replace = TRUE)
+)
+
+merged_data <- merge(sample_data, additional_info, by = "ID", all.x = TRUE)
+list(dim_merged = dim(merged_data), head_merged = head(merged_data))
+```
+
+## Data Frame Quality Checks
+
+```{r dataframe-quality, cache=FALSE}
+# 1. Missing values check
+total_missing <- sum(is.na(sample_data))
+missing_by_col <- colSums(is.na(sample_data))
+
+list(total_missing = total_missing, missing_by_column = missing_by_col[missing_by_col > 0])
+```
+
+## Exercise 3: Data Frame Manipulation
+
+```{r ex3, eval=FALSE}
+# 1. Create a data frame with:
+#    - At least 50 students' names
+#    - Random test scores (0-100)
+#    - Random assignment grades (A, B, C, D, F)
+# 2. Calculate average score by grade
+# 3. Find the top 10 students by score
+# 4. Create a new column with pass/fail status (pass if score ≥ 60)
+# 5. Count students by month of enrollment
+# 6. Identify any missing values
+```
+
+---
+
+# 7. Essential Base R Functions for Data Analysis
+
+## Statistical Functions
+
+```{r statistical-functions, cache=FALSE}
+# Create sample data
+set.seed(123)
+data_vector <- rnorm(100, mean = 50, sd = 10)
+
+# 1. Central tendency
+mean_val   <- mean(data_vector)
+median_val <- median(data_vector)
+
+get_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+mode_val <- get_mode(round(data_vector))
+
+# 2. Dispersion
+var_val <- var(data_vector)
+sd_val  <- sd(data_vector)
+range_vals <- range(data_vector)
+
+# 3. Quantiles & percentiles
+q_all   <- quantile(data_vector, probs = c(0, 0.25, 0.5, 0.75, 1))
+q_sel   <- quantile(data_vector, probs = c(0.1, 0.5, 0.9))
+
+# 4. Correlation & covariance
+set.seed(123)
+x <- rnorm(100); y <- 2*x + rnorm(100, sd = 0.5)
+cor_xy <- cor(x, y); cov_xy <- cov(x, y)
+
+list(
+  central_tendency = data.frame(Mean = mean_val, Median = median_val, Mode = mode_val),
+  dispersion       = data.frame(Variance = var_val, SD = sd_val, Range_min = range_vals[1], Range_max = range_vals[2]),
+  quantiles        = q_all,
+  selected_percentiles = q_sel,
+  summary          = summary(data_vector),
+  correlation_cov  = data.frame(Correlation = cor_xy, Covariance = cov_xy)
+)
+```
+
+## String Manipulation Functions
+
+```{r string-functions, cache=FALSE}
+# Create example strings
+text1 <- "Data Analysis with R Programming"
+text2 <- "BIG DATA MANAGEMENT"
+text3 <- "  extra spaces  "
+
+string_tbl <- data.frame(
+  Description = c("Original text1","Uppercase text1","Lowercase text2","Title case text1","Length text1",
+                  "First 10 chars of text1","Chars 12-20 of text1","Trimmed text3"),
+  Result = c(text1, toupper(text1), tolower(text2), tools::toTitleCase(tolower(text1)),
+             nchar(text1), substr(text1,1,10), substr(text1,12,20), trimws(text3))
+)
+knitr::kable(string_tbl, align='l')
+```
+
+## Exercise 4: Data Analysis Workflow
+
+```{r ex4, eval=FALSE}
+# Using the built-in `mtcars` dataset:
+# 1. Load and explore the data structure
+# 2. Calculate basic statistics for all numeric columns
+# 3. Create correlation matrix for all variables
+# 4. Identify the car with best mpg and worst mpg
+# 5. Group cars by number of cylinders and calculate average mpg
+```
+
+---
+
+# 8. Conclusion and Next Steps
+
+In this comprehensive section, you've learned:
+
+1. **R fundamentals**: Syntax, variables, data types  
+2. **Data structures**: Vectors, matrices, data frames  
+3. **Essential functions**: Statistical, string, date operations  
+4. **Data manipulation**: Filtering, sorting, aggregation  
+5. **Memory management**: Efficient coding for large datasets  
+6. **File operations**: Importing and exporting data  
+7. **Best practices**: Coding style and debugging techniques
+
+## Additional Resources
+
+- **Official R Documentation**: https://www.r-project.org/  
+- **RStudio Cheat Sheets**: https://www.rstudio.com/resources/cheatsheets/  
+- **Quick-R Tutorials**: http://www.statmethods.net/  
+- **Stack Overflow R Tag**: https://stackoverflow.com/questions/tagged/r  
+- **R-bloggers**: https://www.r-bloggers.com/
+
+---
+
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

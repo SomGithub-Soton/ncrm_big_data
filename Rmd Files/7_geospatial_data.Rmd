@@ -1,0 +1,1332 @@
+---
+title: "Handling Geospatial Data in R"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    geometry: margin=1in
+    fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+library(conflicted)
+conflict_prefer("select", "dplyr")
+
+
+```
+
+
+```{r echo=FALSE, results='asis'}
+htmltools::tags$style(
+  htmltools::HTML("
+    /* Make leaflet maps full width and fixed height */
+    .leaflet-container {
+      width: 100% !important;
+      height: 50vh !important;    
+      max-width: 100% !important;
+    }
+  ")
+)
+```
+
+# Introduction to Geospatial Data in R
+
+This training manual provides a comprehensive guide to handling geospatial data in R, covering both vector and raster data formats, coordinate reference systems, and various mapping techniques.
+
+## Learning Objectives
+
+By the end of this tutorial, you will be able to:
+
+- Understand and work with vector data using `sf` package
+- Handle raster data using `terra` package
+- Manage coordinate reference systems (CRS) and projections
+- Create static maps with `ggplot2` and `tmap`
+- Build interactive maps with `leaflet` and `mapview`
+
+## Required Packages
+
+First, let's install and load all necessary packages:
+
+```{r install_packages, eval=FALSE}
+# Install packages if not already installed
+# install.packages(c("sf", "terra", "raster", "ggplot2", "tmap", 
+#                    "leaflet", "mapview", "dplyr", "viridis", 
+#                    "rnaturalearth", "rnaturalearthdata", "lwgeom"))
+```
+
+```{r load_packages}
+# Load required libraries
+library(sf)              # Simple Features for vector data
+library(terra)           # Spatial data analysis (raster)
+library(raster)          # Legacy raster package
+library(ggplot2)         # Data visualization
+library(tmap)            # Thematic mapping
+library(leaflet)         # Interactive maps
+library(mapview)         # Quick interactive viewing
+library(dplyr)           # Data manipulation
+library(viridis)         # Color palettes
+library(rnaturalearth)   # World map data
+library(rnaturalearthdata)
+
+# Set tmap mode to plot (static) initially
+tmap_mode("plot")
+```
+
+---
+
+# 1. Geospatial Vector Data Structure in R
+
+Vector data represents geographic features as points, lines, or polygons with associated attributes.
+
+## 1.1 Introduction to Simple Features (sf)
+
+The `sf` package is the modern standard for handling vector geospatial data in R. It integrates seamlessly with the tidyverse and provides a consistent interface.
+
+### Key Concepts
+
+- **Simple Features**: A standardized way to encode spatial vector data
+- **Geometry Types**: POINT, LINESTRING, POLYGON, MULTIPOINT, MULTILINESTRING, MULTIPOLYGON
+- **sf objects**: Data frames with a special geometry column
+
+```{r sf_basics}
+# Create simple point features manually
+points_data <- data.frame(
+  name = c("London", "Paris", "Berlin", "Madrid", "Rome"),
+  population = c(8982000, 2161000, 3645000, 3223000, 2873000),
+  lon = c(-0.1278, 2.3522, 13.4050, -3.7038, 12.4964),
+  lat = c(51.5074, 48.8566, 52.5200, 40.4168, 41.9028)
+)
+
+# Convert to sf object
+cities_sf <- st_as_sf(points_data, 
+                      coords = c("lon", "lat"), 
+                      crs = 4326)  # WGS84 coordinate system
+
+# Display structure
+print(cities_sf)
+
+# View the geometry column
+st_geometry(cities_sf)
+```
+
+### Exploring sf Object Properties
+
+```{r sf_properties}
+# Check the geometry type
+st_geometry_type(cities_sf)
+
+# Get bounding box
+st_bbox(cities_sf)
+
+# Get CRS information
+st_crs(cities_sf)
+
+# Get number of features
+nrow(cities_sf)
+
+# Summary statistics
+summary(cities_sf)
+```
+
+## 1.2 Reading Vector Data from Files
+
+```{r read_vector_data}
+# Get world country boundaries from Natural Earth
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Display first few rows
+head(world)
+
+# Check dimensions
+dim(world)
+
+# List column names
+names(world)
+
+# Subset to European countries
+europe <- world[world$continent == "Europe", ]
+
+# Display basic information
+print(paste("Number of European countries:", nrow(europe)))
+print(paste("CRS:", st_crs(europe)$input))
+```
+
+## 1.3 Creating Different Geometry Types
+
+### Creating Lines
+
+```{r create_lines}
+# Create a line connecting cities
+city_coords <- st_coordinates(cities_sf)
+
+# Create a LINESTRING
+route_matrix <- rbind(
+  c(-0.1278, 51.5074),  # London
+  c(2.3522, 48.8566),   # Paris
+  c(13.4050, 52.5200)   # Berlin
+)
+
+route_line <- st_linestring(route_matrix)
+route_sf <- st_sf(
+  route_name = "London-Paris-Berlin",
+  geometry = st_sfc(route_line, crs = 4326)
+)
+
+print(route_sf)
+```
+
+### Creating Polygons
+
+```{r create_polygons}
+# Create a simple polygon (bounding box around cities)
+bbox <- st_bbox(cities_sf)
+
+# Create polygon from bbox
+bbox_poly <- st_as_sfc(bbox)
+bbox_sf <- st_sf(
+  name = "Cities Bounding Box",
+  geometry = bbox_poly
+)
+
+print(bbox_sf)
+```
+
+## 1.4 Spatial Operations with sf
+
+### Buffering
+
+```{r buffering}
+# Create 100 km buffer around cities
+cities_buffer <- st_buffer(cities_sf, dist = 100000)  # distance in meters
+
+# Plot
+plot(st_geometry(europe), col = "lightgray", main = "Cities with 100km Buffers")
+plot(st_geometry(cities_buffer), col = "red", alpha = 0.3, add = TRUE)
+plot(st_geometry(cities_sf), col = "blue", pch = 19, add = TRUE)
+legend("bottomleft", 
+       legend = c("Countries", "100km Buffer", "Cities"),
+       col = c("lightgray", "red", "blue"),
+       pch = c(15, 15, 19))
+```
+
+### Spatial Intersection
+
+```{r intersection}
+# Find which countries intersect with city buffers
+intersecting <- st_intersection(europe, cities_buffer)
+
+# Count intersections per city
+intersection_summary <- intersecting %>%
+  group_by(name.1) %>%
+  summarise(
+    countries_within_100km = n(),
+    .groups = 'drop'
+  )
+
+print(intersection_summary)
+```
+
+### Distance Calculations
+
+```{r distance}
+# Calculate distance matrix between cities (in meters)
+dist_matrix <- st_distance(cities_sf)
+
+# Convert to km and create a data frame
+dist_km <- units::set_units(dist_matrix, km)
+dist_df <- as.data.frame(as.matrix(dist_km))
+colnames(dist_df) <- cities_sf$name
+rownames(dist_df) <- cities_sf$name
+
+print(round(dist_df, 0))
+```
+
+### Spatial Joins
+
+```{r spatial_join}
+# Load libraries
+library(sf)
+library(dplyr)
+library(spData)   # spatial example data
+
+# Load country polygons
+data("world", package = "spData")
+
+# Load example urban agglomerations (major cities)
+data("urban_agglomerations", package = "spData")
+
+# Ensure both layers use the same CRS
+urban <- st_transform(urban_agglomerations, st_crs(world))
+
+# Spatial join: city points with country polygons
+cities_with_country <- st_join(urban, world, join = st_within)
+
+# Select and rename relevant columns
+cities_info <- cities_with_country %>%
+  select(
+    city = urban_agglomeration,
+    country_or_area,
+    population_millions,
+    continent,        # from world after join
+    country = name_long
+  ) %>%
+  st_drop_geometry()
+
+# Print results
+print(cities_info)
+
+
+```
+
+## 1.5 Legacy sp Package (Brief Overview)
+
+The `sp` package was the traditional way to handle spatial data in R. While `sf` is now preferred, you may encounter `sp` objects in older code.
+
+```{r sp_basics}
+# Note: sp is being phased out, but shown for reference
+library(sp)
+
+# Convert sf to sp
+cities_sp <- as(cities_sf, "Spatial")
+class(cities_sp)
+
+# Convert back to sf
+cities_sf_again <- st_as_sf(cities_sp)
+class(cities_sf_again)
+```
+
+---
+
+# 2. Handling Raster Data in R
+
+Raster data represents continuous spatial phenomena as a grid of cells (pixels), each with a value.
+
+## 2.1 Introduction to terra Package
+
+The `terra` package is the modern replacement for the `raster` package, offering faster performance and improved functionality.
+
+### Creating a Simple Raster
+
+```{r create_raster}
+# Create a simple raster
+r <- rast(nrows = 100, ncols = 100, 
+          xmin = -10, xmax = 10, 
+          ymin = 40, ymax = 60,
+          crs = "EPSG:4326")
+
+# Assign random values
+values(r) <- runif(ncell(r), min = 0, max = 100)
+
+# Display raster properties
+print(r)
+
+# Plot
+plot(r, main = "Random Raster Data", 
+     col = viridis(100))
+```
+
+### Raster Properties
+
+```{r raster_properties}
+# Get basic properties
+cat("Number of rows:", nrow(r), "\n")
+cat("Number of columns:", ncol(r), "\n")
+cat("Number of cells:", ncell(r), "\n")
+cat("Resolution:", res(r), "\n")
+cat("Extent:", as.vector(ext(r)), "\n")
+cat("CRS:", crs(r), "\n")
+
+# Summary statistics
+cat("\nSummary Statistics:\n")
+print(summary(values(r)))
+```
+
+## 2.2 Creating Realistic Raster Data
+
+### Elevation-like Surface
+
+```{r elevation_surface}
+# Create an elevation-like surface
+x_coords <- seq(-10, 10, length.out = 100)
+y_coords <- seq(40, 60, length.out = 100)
+
+# Create a matrix with simulated elevation
+elevation_matrix <- outer(x_coords, y_coords, 
+                          function(x, y) {
+                            100 + 50 * sin(x/2) + 30 * cos(y/3) + 
+                            20 * sin(sqrt(x^2 + (y-50)^2)/5)
+                          })
+
+# Create raster from matrix
+elevation <- rast(elevation_matrix)
+ext(elevation) <- c(-10, 10, 40, 60)
+crs(elevation) <- "EPSG:4326"
+names(elevation) <- "elevation"
+
+# Plot
+plot(elevation, 
+     main = "Simulated Elevation Surface (m)",
+     col = terrain.colors(100))
+contour(elevation, add = TRUE, nlevels = 10)
+```
+
+### Temperature Surface
+
+```{r temperature_surface}
+# Create a temperature gradient (decreases with latitude)
+temp_values <- matrix(nrow = 100, ncol = 100)
+for(i in 1:100) {
+  for(j in 1:100) {
+    lat <- 40 + (60-40) * (i-1)/99
+    temp_values[i, j] <- 25 - (lat - 40) * 0.5 + rnorm(1, 0, 1)
+  }
+}
+
+temperature <- rast(temp_values)
+ext(temperature) <- c(-10, 10, 40, 60)
+crs(temperature) <- "EPSG:4326"
+names(temperature) <- "temperature"
+
+# Plot
+plot(temperature, 
+     main = "Simulated Temperature in degree Celsius",
+     col = rev(heat.colors(100)))
+```
+
+## 2.3 Raster Operations
+
+### Raster Algebra
+
+```{r raster_algebra}
+# Create multiple rasters
+r1 <- elevation
+r2 <- temperature
+
+# Basic arithmetic
+r_sum <- r1 + r2
+r_diff <- r1 - r2
+r_product <- r1 * r2
+
+# Plot comparison
+par(mfrow = c(2, 2))
+plot(r1, main = "Elevation", col = terrain.colors(50))
+plot(r2, main = "Temperature", col = heat.colors(50))
+plot(r_sum, main = "Sum", col = viridis(50))
+plot(r_diff, main = "Difference", col = viridis(50))
+par(mfrow = c(1, 1))
+```
+
+### Raster Reclassification
+
+```{r reclassify}
+# Classify elevation into categories
+# Low: < 110, Medium: 110-130, High: > 130
+rcl_matrix <- matrix(c(
+  -Inf, 110, 1,
+  110, 130, 2,
+  130, Inf, 3
+), ncol = 3, byrow = TRUE)
+
+elevation_class <- classify(elevation, rcl_matrix)
+
+# Create labels
+levels(elevation_class) <- data.frame(
+  value = 1:3,
+  category = c("Low", "Medium", "High")
+)
+
+# Plot
+plot(elevation_class, 
+     main = "Elevation Classification",
+     col = c("green", "yellow", "brown"))
+```
+
+### Focal Operations (Moving Window)
+
+```{r focal_operations}
+# Calculate mean in 3x3 moving window
+elevation_smooth <- focal(elevation, w = 3, fun = mean)
+
+# Compare original and smoothed
+par(mfrow = c(1, 2))
+plot(elevation, main = "Original Elevation", col = terrain.colors(100))
+plot(elevation_smooth, main = "Smoothed Elevation (3x3)", col = terrain.colors(100))
+par(mfrow = c(1, 1))
+```
+
+### Cropping and Masking
+
+```{r crop_mask}
+# Define a smaller extent
+crop_ext <- ext(-5, 5, 45, 55)
+
+# Crop raster
+elevation_crop <- crop(elevation, crop_ext)
+
+# Create a circular mask
+center_x <- 0
+center_y <- 50
+radius <- 5
+
+# Create mask polygon
+circle <- st_buffer(st_point(c(center_x, center_y)), dist = radius)
+circle_sf <- st_sf(geometry = st_sfc(circle, crs = 4326))
+
+# Mask raster
+elevation_mask <- mask(elevation_crop, vect(circle_sf))
+
+# Plot
+par(mfrow = c(1, 2))
+plot(elevation_crop, main = "Cropped", col = terrain.colors(100))
+plot(elevation_mask, main = "Masked (Circular)", col = terrain.colors(100))
+par(mfrow = c(1, 1))
+```
+
+## 2.4 Raster Extraction
+
+```{r raster_extract}
+# Extract raster values at city locations
+cities_elevation <- extract(elevation, vect(cities_sf))
+cities_temperature <- extract(temperature, vect(cities_sf))
+
+# Combine with city data
+cities_with_raster <- cities_sf %>%
+  mutate(
+    elevation_m = cities_elevation$elevation,
+    temperature_c = cities_temperature$temperature
+  ) %>%
+  st_drop_geometry()
+
+print(cities_with_raster)
+```
+
+## 2.5 Raster Stacks and Multi-band Rasters
+
+```{r raster_stack}
+# Create a multi-layer raster (stack)
+environmental_stack <- c(elevation, temperature)
+names(environmental_stack) <- c("elevation", "temperature")
+
+print(environmental_stack)
+
+# Plot all layers
+plot(environmental_stack, 
+     col = viridis(100),
+     main = c("Elevation (m)", "Temperature in degree Celsius"))
+
+
+```
+
+## 2.6 Raster Package (Legacy)
+
+```{r raster_legacy, eval=FALSE}
+# The raster package is being phased out
+# Converting between terra and raster
+library(raster)
+
+# terra to raster
+elevation_raster <- raster(elevation)
+
+# raster to terra
+elevation_terra <- rast(elevation_raster)
+```
+
+---
+
+# 3. Projections and Coordinate Reference Systems
+
+Understanding coordinate reference systems (CRS) is crucial for accurate geospatial analysis.
+
+## 3.1 Introduction to CRS
+
+A Coordinate Reference System defines how spatial data relates to locations on Earth.
+
+### Types of CRS
+
+1. **Geographic CRS**: Uses latitude/longitude (e.g., WGS84, EPSG:4326)
+2. **Projected CRS**: Uses x/y coordinates on a flat surface (e.g., UTM, Web Mercator)
+
+```{r crs_basics}
+# Check CRS of our data
+cat("Cities CRS:\n")
+print(st_crs(cities_sf))
+
+cat("\nWorld CRS:\n")
+print(st_crs(world))
+
+# Check if CRS are the same
+cat("\nSame CRS?", st_crs(cities_sf) == st_crs(world), "\n")
+```
+
+## 3.2 Understanding EPSG Codes
+
+EPSG codes are standardized numerical identifiers for CRS.
+
+### Common EPSG Codes
+
+```{r common_epsg}
+# Create a reference table
+epsg_reference <- data.frame(
+  EPSG = c(4326, 3857, 27700, 32630, 2154, 3035),
+  Name = c("WGS 84", "Web Mercator", "British National Grid", 
+           "WGS 84 / UTM zone 30N", "RGF93 / Lambert-93", 
+           "ETRS89 / LAEA Europe"),
+  Type = c("Geographic", "Projected", "Projected", 
+           "Projected", "Projected", "Projected"),
+  Use_Case = c("GPS, Global", "Web maps", "UK", 
+               "Western Europe", "France", "Europe-wide")
+)
+
+print(epsg_reference)
+```
+
+### Querying CRS Details
+
+```{r crs_details}
+# Get detailed information about a CRS
+wgs84 <- st_crs(4326)
+cat("EPSG 4326 Details:\n")
+cat("Name:", wgs84$Name, "\n")
+cat("Datum:", wgs84$datum, "\n")
+cat("Units:", wgs84$units_gdal, "\n")
+
+# Check if CRS is geographic or projected
+cat("Is geographic?", st_is_longlat(cities_sf), "\n")
+```
+
+## 3.3 PROJ4 Strings
+
+PROJ4 strings are another way to define CRS, though EPSG codes are preferred.
+
+```{r proj4_strings}
+# Get PROJ4 string
+proj4_wgs84 <- st_crs(4326)$proj4string
+cat("EPSG:4326 PROJ4 string:\n", proj4_wgs84, "\n\n")
+
+# Create custom projection
+custom_crs <- st_crs("+proj=aeqd +lat_0=51.5 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 +units=m")
+cat("Custom azimuthal equidistant projection:\n")
+print(custom_crs)
+```
+
+## 3.4 Transforming Between CRS
+
+### Vector Data Transformation
+
+```{r transform_vector}
+# Transform cities to different projections
+cities_webmercator <- st_transform(cities_sf, crs = 3857)  # Web Mercator
+cities_utm <- st_transform(cities_sf, crs = 32630)  # UTM Zone 30N
+
+# Compare coordinates
+comparison <- data.frame(
+  City = cities_sf$name,
+  WGS84_lon = st_coordinates(cities_sf)[,1],
+  WGS84_lat = st_coordinates(cities_sf)[,2],
+  WebMerc_x = st_coordinates(cities_webmercator)[,1],
+  WebMerc_y = st_coordinates(cities_webmercator)[,2],
+  UTM_x = st_coordinates(cities_utm)[,1],
+  UTM_y = st_coordinates(cities_utm)[,2]
+)
+
+print(comparison)
+```
+
+### Raster Transformation
+
+```{r transform_raster}
+# Transform elevation raster to UTM
+elevation_utm <- project(elevation, "EPSG:32630", method = "bilinear")
+
+# Compare
+cat("Original CRS:", crs(elevation, describe = TRUE)$name, "\n")
+cat("Transformed CRS:", crs(elevation_utm, describe = TRUE)$name, "\n")
+
+# Plot comparison
+par(mfrow = c(1, 2))
+plot(elevation, main = "WGS84 (Geographic)", col = terrain.colors(100))
+plot(elevation_utm, main = "UTM Zone 30N (Projected)", col = terrain.colors(100))
+par(mfrow = c(1, 1))
+```
+
+## 3.5 Area and Distance Calculations
+
+CRS choice affects area and distance calculations significantly.
+
+```{r area_distance}
+# Calculate area of European countries in different CRS
+europe_wgs84 <- europe
+europe_laea <- st_transform(europe, crs = 3035)  # LAEA Europe
+
+# Calculate areas
+area_wgs84 <- st_area(europe_wgs84)
+area_laea <- st_area(europe_laea)
+
+# Compare for a few countries
+comparison_df <- data.frame(
+  Country = europe$admin[1:5],
+  Area_WGS84_km2 = as.numeric(area_wgs84[1:5]) / 1e6,
+  Area_LAEA_km2 = as.numeric(area_laea[1:5]) / 1e6
+) %>%
+  mutate(Difference_pct = abs(Area_WGS84_km2 - Area_LAEA_km2) / Area_LAEA_km2 * 100)
+
+print(comparison_df)
+
+cat("\nNote: WGS84 (geographic) gives incorrect areas. Always use projected CRS for area calculations!\n")
+```
+
+---
+
+# 4. Static Maps with ggplot2 and tmap
+
+Creating publication-quality static maps is essential for reports and papers.
+
+## 4.1 Static Maps with ggplot2 and geom_sf
+
+### Basic Map with geom_sf
+
+```{r ggplot_basic}
+# Simple map of Europe
+ggplot(data = europe) +
+  geom_sf(fill = "lightblue", color = "white", size = 0.2) +
+  coord_sf(xlim = c(-25, 45), ylim = c(35, 72)) +
+  theme_minimal() +
+  labs(title = "Map of Europe",
+       subtitle = "Using ggplot2 and geom_sf")
+```
+
+### Adding Points and Labels
+
+```{r ggplot_points}
+# Map with cities
+ggplot() +
+  geom_sf(data = europe, fill = "gray90", color = "white", size = 0.3) +
+  geom_sf(data = cities_sf, aes(size = population), 
+          color = "red", alpha = 0.6) +
+  geom_sf_text(data = cities_sf, aes(label = name), 
+               nudge_y = 1, size = 3, fontface = "bold") +
+  scale_size_continuous(name = "Population", 
+                        labels = scales::comma,
+                        range = c(2, 10)) +
+  coord_sf(xlim = c(-10, 20), ylim = c(40, 60)) +
+  theme_minimal() +
+  labs(title = "Major European Cities",
+       subtitle = "Population size indicated by point size",
+       x = "Longitude", y = "Latitude")
+```
+
+### Choropleth Map
+
+```{r ggplot_choropleth}
+# Map population density
+europe_density <- europe %>%
+  mutate(pop_density = pop_est / (as.numeric(st_area(.)) / 1e6))  # per km²
+
+ggplot(data = europe_density) +
+  geom_sf(aes(fill = pop_density), color = "white", size = 0.2) +
+  scale_fill_viridis_c(name = "Population Density\n(per sq KM)",
+                       trans = "log10",
+                       labels = scales::comma) +
+  coord_sf(xlim = c(-25, 45), ylim = c(35, 72)) +
+  theme_minimal() +
+  labs(title = "Population Density in Europe",
+       subtitle = "Log scale transformation applied")
+```
+
+### Multiple Layers
+
+```{r ggplot_multilayer}
+# Complex map with multiple layers
+ggplot() +
+  geom_sf(data = europe, fill = "gray95", color = "gray70", size = 0.3) +
+  geom_sf(data = cities_buffer, fill = "orange", alpha = 0.1, color = "orange") +
+  geom_sf(data = route_sf, color = "blue", size = 1.5, linetype = "dashed") +
+  geom_sf(data = cities_sf, aes(size = population), 
+          color = "red", alpha = 0.8) +
+  geom_sf_text(data = cities_sf, aes(label = name), 
+               nudge_y = 1.5, size = 3.5, fontface = "bold") +
+  scale_size_continuous(name = "Population", 
+                        labels = scales::comma,
+                        range = c(3, 12)) +
+  coord_sf(xlim = c(-12, 18), ylim = c(40, 58)) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(title = "European Cities with Travel Route and Buffers",
+       subtitle = "100km buffers shown in orange",
+       x = "Longitude", y = "Latitude")
+```
+
+### Faceted Maps
+
+```{r ggplot_facet}
+# Create categories for population
+europe_categories <- europe %>%
+  dplyr::filter(continent == "Europe") %>%
+  mutate(pop_category = cut(pop_est, 
+                            breaks = c(0, 5e6, 20e6, 50e6, Inf),
+                            labels = c("< 5M", "5M - 20M", "20M - 50M", "> 50M")))
+
+ggplot(data = europe_categories) +
+  geom_sf(aes(fill = pop_category), color = "white", size = 0.2) +
+  scale_fill_viridis_d(name = "Population") +
+  facet_wrap(~ pop_category) +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank()) +
+  labs(title = "European Countries by Population Category")
+```
+
+## 4.2 Thematic Mapping with tmap
+
+`tmap` provides a grammar of graphics specifically designed for maps.
+
+### Basic tmap
+
+```{r tmap_basic}
+# Simple map
+tm_shape(europe) +
+  tm_borders(col = "gray50") +
+  tm_fill(col = "lightblue") +
+  tm_layout(title = "Europe - Basic tmap")
+```
+
+### Choropleth with tmap
+
+```{r tmap_choropleth}
+# Population map
+tm_shape(europe) +
+  tm_polygons("pop_est",
+              title = "Population",
+              palette = "YlOrRd",
+              style = "jenks",
+              n = 5) +
+  tm_layout(title = "European Population",
+            legend.outside = TRUE,
+            legend.outside.position = "right",
+            frame = FALSE)
+```
+
+### Advanced tmap with Multiple Elements
+
+```{r tmap_advanced}
+# Complex map with multiple layers
+tm_shape(europe) +
+  tm_polygons("pop_est",
+              title = "Population",
+              palette = "Blues",
+              style = "quantile",
+              border.col = "white",
+              border.alpha = 0.5) +
+  tm_shape(cities_sf) +
+  tm_symbols(size = "population",
+             col = "red",
+             alpha = 0.7,
+             title.size = "City Population",
+             scale = 1.5) +
+  tm_text("name", 
+          size = 0.7,
+          auto.placement = TRUE,
+          fontface = "bold") +
+  tm_layout(title = "Europe: Country and City Populations",
+            legend.outside = TRUE,
+            legend.outside.position = "right",
+            bg.color = "lightcyan",
+            frame = TRUE) +
+  tm_compass(position = c("left", "top")) +
+  tm_scale_bar(position = c("left", "bottom"))
+```
+
+### Small Multiples with tmap
+
+```{r tmap_facets}
+# Select a few countries for detailed view
+selected_countries <- c("France", "Germany", "Spain", "Italy")
+countries_subset <- europe %>%
+  dplyr::filter(admin %in% selected_countries)
+
+# Faceted map
+tm_shape(countries_subset) +
+  tm_polygons("pop_est",
+              title = "Population",
+              palette = "Greens") +
+  tm_facets(by = "admin", 
+            free.coords = TRUE,
+            ncol = 2) +
+  tm_layout(legend.show = FALSE,
+            panel.labels = selected_countries)
+```
+
+### Raster with tmap
+
+```{r tmap_raster}
+# Map elevation raster
+tm_shape(elevation) +
+  tm_raster(title = "Elevation (m)",
+            palette = terrain.colors(100),
+            style = "cont") +
+  tm_shape(cities_sf) +
+  tm_symbols(size = 0.5, col = "red") +
+  tm_text("name", size = 0.7, auto.placement = TRUE) +
+  tm_layout(title = "Elevation with Cities",
+            legend.outside = TRUE,
+            bg.color = "lightblue") +
+  tm_compass(position = c("right", "top")) +
+  tm_scale_bar(position = c("left", "bottom"))
+```
+
+---
+
+# 5. Interactive Maps with leaflet and mapview
+
+Interactive maps allow users to zoom, pan, and click on features for more information.
+
+## 5.1 Interactive Maps with leaflet
+
+### Basic Leaflet Map
+
+```{r leaflet_basic}
+# Simple interactive map
+leaflet(data = cities_sf) %>%
+  addTiles() %>%  # Add default OpenStreetMap tiles
+  addMarkers(popup = ~name)
+```
+
+### Customized Markers and Popups
+
+```{r leaflet_custom}
+# Create custom popups
+popup_content <- paste0(
+  "<strong>", cities_sf$name, "</strong><br/>",
+  "Population: ", format(cities_sf$population, big.mark = ","), "<br/>",
+  "Coordinates: ", round(st_coordinates(cities_sf)[,2], 2), "°N, ",
+  round(st_coordinates(cities_sf)[,1], 2), "°E"
+)
+# Ensure UTF-8
+cities_sf$name <- iconv(cities_sf$name, from = "", to = "UTF-8", sub = "")
+popup_content <- paste0("<b>", cities_sf$name, "</b><br>Population: ", cities_sf$population)
+popup_content <- iconv(popup_content, from = "", to = "UTF-8", sub = "")
+
+# Map with custom popups and circle markers
+leaflet(cities_sf) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircleMarkers(
+    radius = ~sqrt(population) / 100,
+    color = "red",
+    fillColor = "orange",
+    fillOpacity = 0.6,
+    popup = popup_content,
+    label = ~name
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    colors = "orange",
+    labels = "European Cities",
+    title = "Legend"
+  )
+
+```
+
+### Choropleth Map with leaflet
+
+```{r leaflet_choropleth}
+# Create color palette
+pal <- colorNumeric(palette = "YlOrRd", domain = europe$pop_est)
+
+# Choropleth map
+leaflet(europe) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(
+    fillColor = ~pal(pop_est),
+    fillOpacity = 0.7,
+    color = "white",
+    weight = 1,
+    popup = ~paste0("<strong>", admin, "</strong><br/>",
+                    "Population: ", format(pop_est, big.mark = ",")),
+    highlight = highlightOptions(
+      weight = 3,
+      color = "red",
+      fillOpacity = 0.9,
+      bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    pal = pal,
+    values = ~pop_est,
+    title = "Population",
+    position = "bottomright",
+    labFormat = labelFormat(big.mark = ",")
+  )
+```
+
+### Multi-layer Interactive Map
+
+```{r leaflet_multilayer}
+# Color palette for raster
+raster_pal <- colorNumeric(terrain.colors(100), 
+                           values(elevation), 
+                           na.color = "transparent")
+
+# Complex map with multiple layers
+leaflet() %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+  addProviderTiles(providers$OpenStreetMap, group = "Streets") %>%
+  addRasterImage(raster(elevation), 
+                 colors = raster_pal, 
+                 opacity = 0.6,
+                 group = "Elevation") %>%
+  addPolygons(data = europe,
+              fillColor = "transparent",
+              color = "blue",
+              weight = 2,
+              group = "Countries") %>%
+  addCircleMarkers(data = cities_sf,
+                   radius = ~sqrt(population) / 100,
+                   color = "red",
+                   fillColor = "yellow",
+                   fillOpacity = 0.8,
+                   popup = ~paste0("<strong>", name, "</strong><br/>",
+                                   "Pop: ", format(population, big.mark = ",")),
+                   group = "Cities") %>%
+  addPolylines(data = route_sf,
+               color = "purple",
+               weight = 3,
+               opacity = 0.7,
+               group = "Route") %>%
+  addLayersControl(
+    baseGroups = c("Satellite", "Streets"),
+    overlayGroups = c("Elevation", "Countries", "Cities", "Route"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    pal = raster_pal,
+    values = values(elevation),
+    title = "Elevation (m)",
+    position = "bottomright"
+  )
+```
+
+## 5.2 Quick Interactive Viewing with mapview
+
+`mapview` provides a simple interface for quick interactive visualization.
+
+### Basic mapview
+
+```{r mapview_basic}
+# Quick view of cities
+mapview(cities_sf, 
+        zcol = "population",
+        cex = "population",
+        legend = TRUE,
+        layer.name = "Population")
+```
+
+### Multiple Layers with mapview
+
+```{r mapview_multilayer}
+# View multiple layers
+m1 <- mapview(europe, 
+              zcol = "pop_est", 
+              layer.name = "Country Pop",
+              alpha.regions = 0.5)
+
+m2 <- mapview(cities_sf, 
+              zcol = "population",
+              col.regions = "red",
+              layer.name = "Cities",
+              cex = 4)
+
+# Combine maps
+m1 + m2
+```
+
+### Raster with mapview
+
+```{r mapview_raster}
+# View raster data
+mapview(raster(elevation), 
+        layer.name = "Elevation",
+        col.regions = terrain.colors(100)) +
+  mapview(cities_sf, 
+          col.regions = "red",
+          layer.name = "Cities")
+```
+
+### Customized mapview
+
+```{r mapview_custom}
+# More control over appearance
+mapview(cities_sf,
+        zcol = "population",
+        col.regions = c("yellow", "orange", "red"),
+        at = c(0, 3000000, 6000000, 9000000),
+        cex = 6,
+        alpha = 0.8,
+        legend = TRUE,
+        layer.name = "City Population",
+        map.types = c("OpenStreetMap", "Esri.WorldImagery"),
+        popup = leafpop::popupTable(
+          st_drop_geometry(cities_sf),
+          zcol = c("name", "population")
+        ))
+```
+
+---
+
+# 6. Practical Examples and Workflows
+
+## 6.1 Complete Workflow: Analyzing Accessibility
+
+```{r workflow_accessibility}
+# Calculate which areas are within 200km of major cities
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+
+# --------------------------
+# Step 0: Prepare data
+# --------------------------
+# cities_sf = your 5 major European cities
+cities_sf <- st_sf(
+  name = c("London", "Paris", "Berlin", "Madrid", "Rome"),
+  population = c(8982000, 2161000, 3645000, 3223000, 2873000),
+  geometry = st_sfc(
+    st_point(c(-0.1278, 51.5074)),
+    st_point(c(2.3522, 48.8566)),
+    st_point(c(13.405, 52.52)),
+    st_point(c(-3.7038, 40.4168)),
+    st_point(c(12.4964, 41.9028))
+  ),
+  crs = 4326
+)
+
+# europe = your European country polygons
+# europe <- st_read("path_to_europe_shapefile.shp")
+
+# --------------------------
+# Step 1: Create 200 km buffers
+# --------------------------
+cities_200km <- st_transform(cities_sf, 3035) %>%
+  st_buffer(200000)
+
+cities_200km_wgs84 <- st_transform(cities_200km, 4326)
+
+# --------------------------
+# Step 2: Calculate coverage
+# --------------------------
+coverage <- st_union(cities_200km_wgs84)
+
+# --------------------------
+# Step 3: Find countries with >50% coverage
+# --------------------------
+europe_3035 <- st_transform(europe, 3035)
+cities_200km_3035 <- st_transform(cities_200km_wgs84, 3035)
+
+coverage_analysis <- europe_3035 %>%
+  rowwise() %>%
+  mutate(
+    country_area = as.numeric(st_area(geometry)),
+    covered_area = {
+      intr <- st_intersection(geometry, st_union(cities_200km_3035))
+      intr <- st_collection_extract(intr, "POLYGON")  # only polygons
+      if (length(intr) == 0) 0 else as.numeric(st_area(st_union(intr)))
+    },
+    coverage_pct = (covered_area / country_area) * 100
+  ) %>%
+  ungroup() %>%
+  st_transform(4326) %>%
+  arrange(desc(coverage_pct))
+
+# --------------------------
+# Step 4: Visualize results
+# --------------------------
+ggplot() +
+  geom_sf(data = coverage_analysis, aes(fill = coverage_pct),
+          color = "white", size = 0.2) +
+  geom_sf(data = cities_200km_wgs84, fill = "transparent", color = "red",
+          linetype = "dashed", alpha = 0.3) +
+  geom_sf(data = cities_sf, color = "red", size = 3) +
+  scale_fill_viridis_c(name = "Coverage %", option = "plasma") +
+  theme_minimal() +
+  labs(title = "Accessibility: Areas within 200km of Major Cities",
+       subtitle = "Five major European cities analyzed")
+
+# --------------------------
+# Step 5: Print top results
+# --------------------------
+cat("\nTop 10 Countries by Coverage:\n")
+coverage_analysis %>%
+  select(admin, coverage_pct) %>%
+  st_drop_geometry() %>%
+  head(10) %>%
+  print()
+
+
+```
+
+## 6.2 Raster Analysis Workflow
+
+```{r workflow_raster}
+# Identify high-elevation, low-temperature areas
+
+# Step 1: Define thresholds
+high_elevation <- elevation > 130
+low_temperature <- temperature < 15
+
+# Step 2: Combine conditions
+suitable_areas <- high_elevation & low_temperature
+
+# Step 3: Vectorize suitable areas
+suitable_polygons <- as.polygons(suitable_areas) %>%
+  st_as_sf() %>%
+  dplyr::filter(elevation == 1)  # Keep only TRUE values
+
+# Step 4: Calculate area
+suitable_polygons_3035 <- st_transform(suitable_polygons, crs = 3035)
+total_area <- sum(as.numeric(st_area(suitable_polygons_3035))) / 1e6  # km²
+
+# Step 5: Visualize
+ggplot() +
+  geom_sf(data = suitable_polygons, fill = "purple", alpha = 0.5) +
+  geom_sf(data = cities_sf, color = "red", size = 3) +
+  theme_minimal() +
+  labs(title = "Suitable Areas: High Elevation (>130m) & Low Temperature (<15 degree Celsius)",
+       subtitle = paste0("Total suitable area: ", round(total_area, 0), " sq KM"))
+
+cat("\nSuitable area statistics:\n")
+cat("Total area:", round(total_area, 2), "km²\n")
+cat("Number of polygons:", nrow(suitable_polygons), "\n")
+```
+
+---
+
+# 7. Best Practices and Tips
+
+## 7.1 Performance Optimization
+
+```{r performance_tips, eval=FALSE}
+# 1. Use appropriate CRS for analysis
+# - Geographic (EPSG:4326) for global visualization
+# - Projected CRS for measurements and analysis
+
+# 2. Simplify geometries when appropriate
+simplified <- st_simplify(europe, dTolerance = 1000)
+
+# 3. Use spatial indexing for large datasets
+# st_make_valid()  # Fix invalid geometries
+# st_is_valid()    # Check validity
+
+# 4. For rasters, use appropriate resolution
+# Aggregate to coarser resolution for faster processing
+elevation_coarse <- aggregate(elevation, fact = 5, fun = mean)
+
+# 5. Cache intermediate results
+# saveRDS(large_sf_object, "cache/processed_data.rds")
+# large_sf_object <- readRDS("cache/processed_data.rds")
+```
+
+## 7.2 Common Pitfalls to Avoid
+
+```{r pitfalls, eval=FALSE}
+# 1. NEVER calculate areas in geographic CRS (EPSG:4326)
+# WRONG:
+area_wrong <- st_area(europe)  # If europe is in EPSG:4326
+
+# RIGHT:
+europe_projected <- st_transform(europe, crs = 3035)
+area_correct <- st_area(europe_projected)
+
+# 2. Always check CRS compatibility
+# st_crs(layer1) == st_crs(layer2)
+
+# 3. Handle invalid geometries
+# layer_valid <- st_make_valid(layer_with_issues)
+
+# 4. Be careful with st_intersection on large datasets
+# Use st_crop first to reduce computation
+# cropped <- st_crop(large_layer, small_extent)
+# result <- st_intersection(cropped, other_layer)
+
+# 5. Remember raster vs vector differences
+# Rasters: continuous data, fixed resolution
+# Vectors: discrete features, variable precision
+```
+
+## 7.3 Data Export
+
+```{r export_data, eval=FALSE}
+# Export vector data
+st_write(cities_sf, "output/cities.shp")  # Shapefile
+st_write(cities_sf, "output/cities.geojson")  # GeoJSON
+st_write(cities_sf, "output/cities.gpkg")  # GeoPackage (recommended)
+
+# Export raster data
+writeRaster(elevation, "output/elevation.tif")  # GeoTIFF
+
+# Export maps
+ggsave("output/map.png", width = 10, height = 8, dpi = 300)
+tmap_save(tm_map_object, "output/tmap.png", dpi = 300)
+```
+
+---
+
+# Summary and Further Resources
+
+## Key Takeaways
+
+1. **Vector Data (sf)**: Modern, tidyverse-compatible package for handling spatial vector data
+2. **Raster Data (terra)**: Efficient package for handling gridded spatial data
+3. **CRS Management**: Always use appropriate projections for analysis; EPSG codes are standardized
+4. **Static Maps**: ggplot2 with geom_sf and tmap provide powerful visualization options
+5. **Interactive Maps**: leaflet and mapview enable web-based interactive exploration
+
+## Package Summary
+
+| Package | Purpose | Key Functions |
+|---------|---------|---------------|
+| `sf` | Vector data | `st_read()`, `st_transform()`, `st_buffer()`, `st_intersection()` |
+| `terra` | Raster data | `rast()`, `project()`, `crop()`, `mask()`, `extract()` |
+| `ggplot2` | Static maps | `geom_sf()`, `coord_sf()` |
+| `tmap` | Thematic maps | `tm_shape()`, `tm_polygons()`, `tm_raster()` |
+| `leaflet` | Interactive maps | `leaflet()`, `addTiles()`, `addPolygons()` |
+| `mapview` | Quick viewing | `mapview()` |
+
+## Additional Resources
+
+- **sf documentation**: https://r-spatial.github.io/sf/
+- **terra documentation**: https://rspatial.org/terra/
+- **Geocomputation with R**: https://r.geocompx.org/
+- **Spatial Data Science**: https://r-spatial.org/book/
+- **tmap documentation**: https://r-tmap.github.io/tmap/
+
+## Practice Exercises
+
+1. Download country boundary data for your region and create a choropleth map
+2. Create a 50km buffer around points of interest and calculate coverage statistics
+3. Combine multiple raster layers and identify areas meeting specific criteria
+4. Build an interactive map with multiple basemaps and layer controls
+5. Transform data between different CRS and compare area calculations
+
+
+
+---
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

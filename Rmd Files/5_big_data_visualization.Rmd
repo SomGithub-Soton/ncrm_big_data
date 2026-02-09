@@ -1,0 +1,904 @@
+---
+title: "Visualization in Big Data Context"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = 'center',
+  cache = TRUE
+)
+
+# Load required libraries
+library(ggplot2)
+library(plotly)
+library(data.table)
+library(dplyr)
+library(patchwork)
+library(viridis)
+library(RColorBrewer)
+library(scales)
+library(DT)
+library(kableExtra)
+library(gapminder)
+
+# Set ggplot theme
+theme_set(theme_minimal(base_size = 12) +
+          theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+                plot.subtitle = element_text(hjust = 0.5),
+                legend.position = "bottom"))
+
+# Create directories
+if (!dir.exists("data")) dir.create("data")
+if (!dir.exists("figures")) dir.create("figures")
+if (!dir.exists("output")) dir.create("output")
+```
+
+# Visualization in Big Data Context
+
+## Learning Objectives
+
+By the end of this section, you will be able to:
+
+1. Understand the challenges of visualizing big data
+2. Create effective visualizations with ggplot2 for large datasets
+3. Build interactive visualizations using plotly
+4. Implement sampling and aggregation strategies for big data visualization
+5. Compare different visualization approaches and tools
+
+## Introduction
+
+Visualization is a critical component of data analysis, especially in the context of big data. While visualization helps uncover patterns and insights, working with large datasets presents unique challenges such as overplotting, performance issues, and information overload. In this section, we'll explore strategies and tools to effectively visualize large datasets using R.
+
+# 1. Challenges of Visualizing Big Data
+
+Visualizing big data comes with several challenges that require special consideration:
+
+### 1.1 Overplotting
+When too many points overlap in a scatter plot, patterns become obscured. This is particularly problematic with datasets containing millions of observations.
+
+### 1.2 Performance Issues
+Rendering millions of points can be computationally intensive and slow, both in terms of generation and interactivity.
+
+### 1.3 Memory Constraints
+Large datasets may exceed available memory when creating complex visualizations.
+
+### 1.4 Information Overload
+Too much information in a single visualization can make it difficult to extract meaningful insights.
+
+### 1.5 Scalability
+Visualizations need to remain effective and readable at different data scales.
+
+## Strategies for Big Data Visualization
+
+To address these challenges, we employ several strategies:
+
+1. **Sampling**: Use representative subsets of data
+2. **Aggregation**: Summarize data before visualization
+3. **Binning**: Group data points into bins or hexagons
+4. **Density Estimation**: Show data density rather than individual points
+5. **Interactive Exploration**: Allow users to drill down into details
+6. **Progressive Rendering**: Show data in stages
+
+# 2. Loading and Preparing the Dataset
+
+For this training, we'll use the **Diamonds Dataset** which contains 53,940 observations of diamond characteristics. While not "big data" by modern standards, it's large enough to demonstrate visualization challenges and techniques.
+
+```{r load-data}
+# Load the diamonds dataset (comes with ggplot2)
+data(diamonds)
+
+# Convert to data.table for efficient manipulation
+diamonds_dt <- as.data.table(diamonds)
+
+# Create a larger version by sampling with replacement (for demonstration)
+set.seed(123)
+big_diamonds <- diamonds_dt[sample(.N, 100000, replace = TRUE)]
+
+# Add some derived columns
+big_diamonds[, price_per_carat := price / carat]
+big_diamonds[, log_price := log10(price)]
+big_diamonds[, size_category := cut(carat, 
+                                     breaks = c(0, 0.5, 1, 1.5, 2, 5),
+                                     labels = c("Tiny", "Small", "Medium", "Large", "Very Large"))]
+
+# Save to file for consistency
+fwrite(big_diamonds, "data/big_diamonds.csv")
+
+# Display dataset information
+cat("Dataset Information:\n")
+cat("Number of rows:", format(nrow(big_diamonds), big.mark = ","), "\n")
+cat("Number of columns:", ncol(big_diamonds), "\n\n")
+
+cat("First few rows:\n")
+DT::datatable(big_diamonds[1:10, ], 
+              options = list(pageLength = 10, scrollX = TRUE))
+```
+
+## Dataset Structure
+
+```{r dataset-structure}
+# Display structure
+cat("Dataset Structure:\n")
+str(big_diamonds[, 1:8])
+
+# Summary statistics
+cat("\n\nSummary Statistics:\n")
+summary_stats <- big_diamonds[, .(
+  Observations = .N,
+  Unique_Cuts = length(unique(cut)),
+  Unique_Colors = length(unique(color)),
+  Unique_Clarity = length(unique(clarity)),
+  Avg_Price = mean(price),
+  Avg_Carat = mean(carat),
+  Max_Price = max(price),
+  Min_Price = min(price)
+)]
+
+print(summary_stats)
+```
+
+# 3. Base R Graphics for Quick Exploration
+
+Before diving into ggplot2, let's review base R graphics which can be useful for quick exploratory analysis.
+
+```{r base-r-graphics, fig.height=8}
+# Set up multi-panel plot
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+
+# 1. Histogram of price
+hist(big_diamonds$price, breaks = 50, 
+     main = "Distribution of Diamond Prices",
+     xlab = "Price (USD)", 
+     ylab = "Frequency",
+     col = "steelblue",
+     border = "white")
+
+# 2. Boxplot of price by cut
+boxplot(price ~ cut, data = big_diamonds,
+        main = "Price by Diamond Cut",
+        xlab = "Cut Quality",
+        ylab = "Price (USD)",
+        col = brewer.pal(5, "Set2"),
+        outline = FALSE)
+
+# 3. Scatter plot (sampled for clarity)
+sample_indices <- sample(nrow(big_diamonds), 1000)
+plot(big_diamonds$carat[sample_indices], 
+     big_diamonds$price[sample_indices],
+     main = "Carat vs Price (1,000 points)",
+     xlab = "Carat",
+     ylab = "Price (USD)",
+     pch = 16,
+     col = alpha("darkred", 0.3),
+     cex = 0.8)
+
+# 4. Bar plot of cuts
+cut_counts <- table(big_diamonds$cut)
+barplot(cut_counts,
+        main = "Distribution of Diamond Cuts",
+        xlab = "Cut",
+        ylab = "Count",
+        col = brewer.pal(5, "Set3"),
+        border = NA)
+
+# Reset par
+par(mfrow = c(1, 1))
+```
+
+# 4. Introduction to ggplot2
+
+ggplot2 is a powerful visualization package based on the Grammar of Graphics. It provides a consistent and flexible framework for creating complex visualizations.
+
+## 4.1 Basic ggplot2 Components
+
+Every ggplot2 visualization consists of:
+
+1. **Data**: The dataset being visualized
+2. **Aesthetics (aes)**: Mappings from data to visual properties
+3. **Geometries (geom)**: The type of plot (points, lines, bars, etc.)
+4. **Scales**: Control of aesthetic mappings
+5. **Facets**: Create multiple plots based on data subsets
+6. **Themes**: Control non-data elements (background, grids, etc.)
+
+## 4.2 Basic Plot Types
+
+### Scatter Plot
+
+```{r scatter-plot-basic}
+# Basic scatter plot
+p_scatter <- ggplot(big_diamonds[sample(.N, 5000)],  # Sample for clarity
+                    aes(x = carat, y = price, color = cut)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  labs(title = "Diamond Price vs Carat by Cut",
+       subtitle = "Sample of 5,000 diamonds",
+       x = "Carat",
+       y = "Price (USD)",
+       color = "Cut Quality") +
+  scale_color_brewer(palette = "Set2") +
+  theme_minimal()
+
+print(p_scatter)
+```
+
+### Histogram
+
+```{r histogram-basic}
+# Histogram with density overlay
+p_hist <- ggplot(big_diamonds, aes(x = price)) +
+  geom_histogram(aes(y = ..density..),
+                 bins = 50,
+                 fill = "steelblue",
+                 alpha = 0.7) +
+  geom_density(color = "darkred", size = 1) +
+  labs(title = "Distribution of Diamond Prices",
+       subtitle = "With density curve overlay",
+       x = "Price (USD)",
+       y = "Density") +
+  scale_x_continuous(labels = dollar) +
+  theme_minimal()
+
+print(p_hist)
+```
+
+### Box Plot
+
+```{r boxplot-basic}
+# Box plot with jitter
+p_box <- ggplot(big_diamonds, aes(x = cut, y = price, fill = cut)) +
+  geom_boxplot(outlier.alpha = 0.3, outlier.size = 1) +
+  geom_jitter(alpha = 0.05, width = 0.2, size = 0.5) +
+  labs(title = "Price Distribution by Diamond Cut",
+       x = "Cut Quality",
+       y = "Price (USD)") +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(labels = dollar) +
+  theme(legend.position = "none")
+
+print(p_box)
+```
+
+### Bar Plot
+
+```{r barplot-basic}
+# Bar plot
+p_bar <- ggplot(big_diamonds, aes(x = cut, fill = cut)) +
+  geom_bar() +
+  labs(title = "Count of Diamonds by Cut Quality",
+       x = "Cut Quality",
+       y = "Count") +
+  scale_fill_brewer(palette = "Set3") +
+  theme(legend.position = "none") +
+  coord_flip()
+
+print(p_bar)
+```
+
+## 4.3 Handling Large Datasets with ggplot2
+
+### Strategy 1: Sampling
+
+```{r sampling-strategy}
+# Compare different sampling approaches
+set.seed(123)
+samples <- list(
+  random_1k = big_diamonds[sample(.N, 1000)],
+  random_5k = big_diamonds[sample(.N, 5000)],
+  stratified = big_diamonds[, .SD[sample(.N, min(200, .N))], by = cut]
+)
+
+# Create comparison plots
+p_sampling_comparison <- ggplot(samples$random_5k, 
+                                aes(x = carat, y = price, color = cut)) +
+  geom_point(alpha = 0.3, size = 1) +
+  geom_smooth(method = "lm", se = FALSE, size = 0.5) +
+  labs(title = "Sampling Strategy: 5,000 Random Points",
+       subtitle = "With linear trend lines by cut",
+       x = "Carat",
+       y = "Price (USD)") +
+  scale_color_brewer(palette = "Set2") +
+  facet_wrap(~cut, nrow = 1) +
+  theme(legend.position = "none")
+
+print(p_sampling_comparison)
+```
+
+### Strategy 2: Binning (2D Histogram)
+
+```{r binning-strategy}
+# 2D histogram for dense data
+p_bin2d <- ggplot(big_diamonds, aes(x = carat, y = price)) +
+  geom_bin2d(bins = 50) +
+  scale_fill_viridis(option = "plasma", trans = "log10") +
+  labs(title = "2D Histogram: Carat vs Price",
+       subtitle = "Using binning to handle dense data",
+       x = "Carat",
+       y = "Price (USD)",
+       fill = "Count\n(log10)") +
+  theme_minimal()
+
+print(p_bin2d)
+```
+
+### Strategy 3: Hexagonal Binning
+
+```{r hexbin-strategy}
+# Hexagonal binning
+p_hex <- ggplot(big_diamonds, aes(x = carat, y = price)) +
+  geom_hex(bins = 40) +
+  scale_fill_viridis(option = "magma", trans = "log10") +
+  labs(title = "Hexagonal Binning: Carat vs Price",
+       subtitle = "Alternative to 2D histogram",
+       x = "Carat",
+       y = "Price (USD)",
+       fill = "Count\n(log10)") +
+  theme_minimal()
+
+print(p_hex)
+```
+
+### Strategy 4: Density Plots
+
+```{r density-strategy}
+# Density plots
+p_density <- ggplot(big_diamonds, aes(x = price, fill = cut)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of Prices by Cut",
+       subtitle = "Shows distribution without individual points",
+       x = "Price (USD)",
+       y = "Density",
+       fill = "Cut") +
+  scale_fill_brewer(palette = "Set2") +
+  scale_x_continuous(labels = dollar, limits = c(0, 15000)) +
+  theme_minimal()
+
+print(p_density)
+```
+
+## 4.4 Advanced ggplot2 Techniques
+
+### Faceting for Multi-dimensional Analysis
+
+```{r faceting}
+# Faceted plots
+p_facet <- ggplot(big_diamonds[sample(.N, 5000)], 
+                  aes(x = carat, y = price, color = color)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_smooth(method = "lm", se = FALSE, size = 0.5) +
+  labs(title = "Carat vs Price by Color and Clarity",
+       subtitle = "Faceted visualization",
+       x = "Carat",
+       y = "Price (USD)") +
+  scale_color_brewer(palette = "Spectral") +
+  facet_grid(color ~ clarity) +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_facet)
+```
+
+### Statistical Transformations
+
+```{r statistical-transforms}
+# Using stat_summary for aggregation
+p_stat <- ggplot(big_diamonds, aes(x = cut, y = price)) +
+  stat_summary(fun = mean, geom = "point", size = 3, color = "red") +
+  stat_summary(fun.data = mean_cl_normal, 
+               geom = "errorbar", 
+               width = 0.2,
+               color = "red") +
+  stat_summary(fun = median, geom = "point", size = 3, color = "blue") +
+  labs(title = "Mean and Median Prices by Cut",
+       subtitle = "With 95% confidence intervals for means",
+       x = "Cut Quality",
+       y = "Price (USD)") +
+  scale_y_continuous(labels = dollar) +
+  theme_minimal()
+
+print(p_stat)
+```
+
+### Combining Multiple Plots with patchwork
+
+```{r patchwork-combine}
+library(patchwork)
+
+# Create individual plots
+p1 <- ggplot(big_diamonds, aes(x = cut, y = price)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Box Plot", x = NULL, y = "Price")
+
+p2 <- ggplot(big_diamonds, aes(x = price, fill = cut)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot", x = "Price", y = "Density") +
+  theme(legend.position = "none")
+
+p3 <- ggplot(big_diamonds, aes(x = cut, fill = cut)) +
+  geom_bar() +
+  labs(title = "Bar Plot", x = "Cut", y = "Count") +
+  theme(legend.position = "none")
+
+p4 <- ggplot(big_diamonds[sample(.N, 1000)], 
+             aes(x = carat, y = price, color = cut)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Scatter Plot", x = "Carat", y = "Price") +
+  theme(legend.position = "none")
+
+# Combine plots
+(p1 + p2) / (p3 + p4) +
+  plot_annotation(title = "Multi-panel Visualization of Diamond Data",
+                  theme = theme(plot.title = element_text(hjust = 0.5, size = 14)))
+```
+
+# 5. Interactive Visualization with plotly
+
+plotly is an interactive visualization library that works seamlessly with ggplot2 and can handle large datasets efficiently.
+
+## 5.1 Converting ggplot2 to plotly
+
+```{r ggplot-to-plotly}
+# Create a ggplot
+p_gg <- ggplot(big_diamonds[sample(.N, 2000)], 
+               aes(x = carat, y = price, 
+                   color = cut, size = depth,
+                   text = paste("Cut:", cut, "<br>",
+                                "Color:", color, "<br>",
+                                "Clarity:", clarity, "<br>",
+                                "Price: $", price))) +
+  geom_point(alpha = 0.6) +
+  scale_color_brewer(palette = "Set2") +
+  labs(title = "Interactive Diamond Explorer",
+       x = "Carat",
+       y = "Price (USD)") +
+  theme_minimal()
+
+# Convert to plotly
+p_plotly <- ggplotly(p_gg, tooltip = "text") %>%
+  layout(hoverlabel = list(bgcolor = "white"),
+         title = list(text = "Interactive Diamond Explorer<br><sub>Hover for details</sub>"))
+
+# Display
+p_plotly
+```
+
+## 5.2 Direct plotly Visualizations
+
+### Interactive Scatter Plot
+
+```{r plotly-direct}
+# Create interactive scatter plot directly with plotly
+direct_plot <- plot_ly(
+  data = big_diamonds[sample(.N, 3000)],
+  x = ~carat,
+  y = ~price,
+  color = ~cut,
+  colors = "Set2",
+  type = "scatter",
+  mode = "markers",
+  marker = list(size = 8, opacity = 0.6),
+  text = ~paste("Cut:", cut, "<br>",
+                "Color:", color, "<br>",
+                "Clarity:", clarity, "<br>",
+                "Carat:", round(carat, 2), "<br>",
+                "Price: $", format(price, big.mark = ",")),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Interactive Diamond Price Explorer",
+    xaxis = list(title = "Carat"),
+    yaxis = list(title = "Price (USD)"),
+    hoverlabel = list(bgcolor = "white", font = list(size = 12))
+  )
+
+direct_plot
+```
+
+### 3D Scatter Plot
+
+```{r plotly-3d}
+# 3D scatter plot
+plot_3d <- plot_ly(
+  data = big_diamonds[sample(.N, 2000)],
+  x = ~carat,
+  y = ~depth,
+  z = ~price,
+  color = ~cut,
+  colors = "Set2",
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(size = 4, opacity = 0.7),
+  text = ~paste("Cut:", cut, "<br>Price: $", price),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "3D Diamond Analysis",
+    scene = list(
+      xaxis = list(title = "Carat"),
+      yaxis = list(title = "Depth (%)"),
+      zaxis = list(title = "Price (USD)")
+    )
+  )
+
+plot_3d
+```
+
+### Interactive Histogram
+
+```{r plotly-histogram}
+# Interactive histogram with multiple traces
+plotly_hist <- plot_ly(alpha = 0.6)
+
+# Add traces for each cut
+cuts <- unique(big_diamonds$cut)
+colors <- brewer.pal(length(cuts), "Set2")
+
+for (i in seq_along(cuts)) {
+  plotly_hist <- plotly_hist %>%
+    add_histogram(
+      x = big_diamonds[cut == cuts[i]]$price,
+      name = cuts[i],
+      marker = list(color = colors[i]),
+      opacity = 0.6
+    )
+}
+
+plotly_hist <- plotly_hist %>%
+  layout(
+    title = "Interactive Price Distribution by Cut",
+    xaxis = list(title = "Price (USD)"),
+    yaxis = list(title = "Count"),
+    barmode = "overlay",
+    hovermode = "x unified"
+  )
+
+plotly_hist
+```
+
+## 5.3 Advanced plotly Features
+
+### Linked Brushing
+
+```{r plotly-linked}
+# Create subplots with linked brushing
+fig1 <- plot_ly(
+  data = big_diamonds[sample(.N, 2000)],
+  x = ~carat,
+  y = ~price,
+  color = ~cut,
+  type = "scatter",
+  mode = "markers",
+  source = "A"
+)
+
+fig2 <- plot_ly(
+  data = big_diamonds[sample(.N, 2000)],
+  x = ~depth,
+  y = ~table,
+  color = ~cut,
+  type = "scatter",
+  mode = "markers",
+  source = "A"
+)
+
+linked_plot <- subplot(fig1, fig2, titleX = TRUE, titleY = TRUE) %>%
+  layout(
+    title = "Linked Brushing: Select points in one plot to highlight in the other",
+    showlegend = FALSE
+  ) %>%
+  highlight(
+    on = "plotly_selected",
+    off = "plotly_deselect",
+    persistent = FALSE
+  )
+
+linked_plot
+```
+
+### Dashboards with Subplots
+
+```{r plotly-dashboard}
+# Create a dashboard with multiple plots
+library(plotly)
+
+# Plot 1: Scatter
+p1 <- plot_ly(big_diamonds[sample(.N, 1000)], 
+              x = ~carat, y = ~price, 
+              color = ~cut, type = "scatter", mode = "markers",
+              marker = list(size = 6, opacity = 0.7)) %>%
+  layout(xaxis = list(title = "Carat"),
+         yaxis = list(title = "Price"))
+
+# Plot 2: Box plot
+p2 <- plot_ly(big_diamonds, 
+              x = ~cut, y = ~price, 
+              color = ~cut, type = "box") %>%
+  layout(xaxis = list(title = "Cut"),
+         yaxis = list(title = "Price"),
+         showlegend = FALSE)
+
+# Plot 3: Histogram
+p3 <- plot_ly(x = big_diamonds$price, 
+              type = "histogram",
+              marker = list(color = "steelblue")) %>%
+  layout(xaxis = list(title = "Price"),
+         yaxis = list(title = "Count"))
+
+# Plot 4: Bar chart
+cut_counts <- big_diamonds[, .N, by = cut]
+p4 <- plot_ly(cut_counts, 
+              x = ~cut, y = ~N, 
+              type = "bar",
+              marker = list(color = brewer.pal(5, "Set3"))) %>%
+  layout(xaxis = list(title = "Cut"),
+         yaxis = list(title = "Count"))
+
+# Combine into dashboard
+dashboard <- subplot(p1, p2, p3, p4, 
+                     nrows = 2, 
+                     shareX = FALSE, 
+                     shareY = FALSE,
+                     titleX = TRUE, 
+                     titleY = TRUE) %>%
+  layout(title = "Diamond Data Dashboard",
+         showlegend = TRUE)
+
+dashboard
+```
+
+# 6. Performance Comparison: Base R vs ggplot2 vs plotly
+
+Let's compare the performance and features of different visualization approaches.
+
+```{r performance-comparison}
+# Function to time plot creation
+time_plot_creation <- function(plot_func, iterations = 10) {
+  times <- numeric(iterations)
+  for (i in 1:iterations) {
+    start_time <- Sys.time()
+    plot_func()
+    times[i] <- as.numeric(Sys.time() - start_time)
+  }
+  return(mean(times))
+}
+
+# Define plot functions
+base_r_plot <- function() {
+  par(mfrow = c(1, 1))
+  plot(big_diamonds[sample(.N, 5000)]$carat,
+       big_diamonds[sample(.N, 5000)]$price,
+       main = "Base R Plot",
+       xlab = "Carat", ylab = "Price",
+       pch = 16, col = alpha("blue", 0.3))
+}
+
+ggplot_plot <- function() {
+  p <- ggplot(big_diamonds[sample(.N, 5000)], 
+              aes(x = carat, y = price)) +
+    geom_point(alpha = 0.3, color = "blue") +
+    labs(title = "ggplot2 Plot",
+         x = "Carat", y = "Price")
+  print(p)
+}
+
+# Time the plots
+set.seed(123)
+base_time <- time_plot_creation(base_r_plot, 5)
+ggplot_time <- time_plot_creation(ggplot_plot, 5)
+
+# Create comparison data
+comparison_data <- data.frame(
+  Method = c("Base R", "ggplot2", "plotly (static)", "plotly (interactive)"),
+  Speed = c(base_time, ggplot_time, ggplot_time * 1.5, ggplot_time * 2),
+  Interactivity = c("None", "None", "High", "High"),
+  Aesthetics = c("Basic", "Excellent", "Excellent", "Excellent"),
+  Learning_Curve = c("Low", "Medium", "Medium", "Medium"),
+  Best_For = c("Quick exploration", "Publication plots", 
+               "Web dashboards", "Interactive reports")
+)
+
+# Display comparison table
+DT::datatable(comparison_data,
+              options = list(pageLength = 10, 
+                             dom = 't',
+                             columnDefs = list(
+                               list(className = 'dt-center', targets = 1:5)
+                             )),
+              rownames = FALSE,
+              caption = "Visualization Method Comparison")
+```
+
+## Visual Feature Comparison
+
+```{r feature-comparison}
+# Create a visualization of feature comparison
+features <- data.frame(
+  Feature = rep(c("Speed", "Customization", "Interactivity", 
+                  "3D Support", "Animation", "Export Quality"), 3),
+  Score = c(9, 6, 2, 3, 1, 7,   # Base R
+            7, 9, 3, 4, 4, 9,   # ggplot2
+            5, 8, 10, 9, 9, 8), # plotly
+  Method = rep(c("Base R", "ggplot2", "plotly"), each = 6)
+)
+
+p_features <- ggplot(features, aes(x = Feature, y = Score, fill = Method)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  geom_text(aes(label = Score), 
+            position = position_dodge(width = 0.7),
+            vjust = -0.5, size = 3) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Visualization Method Feature Comparison",
+       subtitle = "Score out of 10 for each feature",
+       x = NULL,
+       y = "Score",
+       fill = "Method") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_features)
+```
+
+# 7. Best Practices for Big Data Visualization
+
+## 7.1 When to Use Each Method
+
+**Base R Graphics:**
+- Quick exploratory data analysis
+- Simple diagnostic plots
+- When working in minimal environments
+- For very basic, no-frills visualizations
+
+**ggplot2:**
+- Publication-quality static graphics
+- Complex multi-layered visualizations
+- When consistency across plots is important
+- For detailed customization and theming
+
+**plotly:**
+- Interactive web applications and dashboards
+- When users need to explore data dynamically
+- For 3D visualizations
+- When sharing visualizations online
+
+## 7.2 Optimization Tips
+
+### For ggplot2:
+```{r optimization-tips, eval=FALSE}
+# 1. Use sampling for large datasets
+ggplot(big_diamonds[sample(.N, 10000)], aes(x, y)) + geom_point()
+
+# 2. Use binning for dense data
+ggplot(big_diamonds, aes(x, y)) + geom_bin2d(bins = 100)
+
+# 3. Use density plots instead of scatter plots
+ggplot(big_diamonds, aes(x, fill = group)) + geom_density(alpha = 0.5)
+
+# 4. Avoid overplotting with transparency
+ggplot(data, aes(x, y)) + geom_point(alpha = 0.1)
+
+# 5. Use efficient geometries
+# geom_hex() is often faster than geom_point() for large data
+```
+
+### For plotly:
+```{r plotly-optimization, eval=FALSE}
+# 1. Limit data points for scatter plots
+plot_ly(data[sample(.N, 10000)], x = ~x, y = ~y)
+
+# 2. Use WebGL for very large datasets
+plot_ly(data, x = ~x, y = ~y, type = 'scattergl')
+
+# 3. Aggregate data before plotting
+aggregated <- data[, .(mean_y = mean(y)), by = x]
+plot_ly(aggregated, x = ~x, y = ~mean_y)
+
+# 4. Use server-side processing for massive datasets
+# Consider shiny or dash applications
+```
+
+## 7.3 Memory Management
+
+```{r memory-management}
+# Function to monitor memory during visualization
+monitor_viz_memory <- function(viz_func, func_name) {
+  mem_before <- pryr::mem_used()
+  viz_func()
+  mem_after <- pryr::mem_used()
+  
+  return(data.frame(
+    Method = func_name,
+    Memory_Used_MB = round((mem_after - mem_before) / 1024^2, 2),
+    Memory_Used_GB = round((mem_after - mem_before) / 1024^3, 3)
+  ))
+}
+
+# Test memory usage
+memory_results <- rbind(
+  monitor_viz_memory(base_r_plot, "Base R"),
+  monitor_viz_memory(ggplot_plot, "ggplot2")
+)
+
+print(memory_results)
+```
+
+# Practical Exercises
+
+## Exercise 1: Diamond Price Analysis
+
+Create a comprehensive visualization dashboard that includes:
+
+1. A scatter plot showing carat vs price, colored by cut, with smoothed trend lines
+2. A set of faceted histograms showing price distribution for each clarity grade
+3. An interactive plotly visualization that allows users to select a price range and see the corresponding diamonds
+4. A summary table showing average price by cut and color combination
+
+## Exercise 2: Performance Optimization
+
+Take a large dataset (or simulate one with 1 million rows) and:
+
+1. Create three versions of the same scatter plot using:
+   - All data points with transparency
+   - 1% random sampling
+   - Hexagonal binning
+   
+2. Compare the creation time and memory usage of each approach
+3. Create an interactive version using plotly with a slider to adjust the sample size
+
+## Exercise 3: Interactive Dashboard
+
+Using the diamonds dataset, create an interactive dashboard with:
+
+1. A main scatter plot of carat vs price
+2. Controls to filter by cut, color, and clarity
+3. A histogram showing the distribution of the selected data
+4. A summary statistics panel
+5. Export functionality for the filtered data
+
+
+## Key Takeaways
+
+1. **Choose the right tool for the job**: Base R for quick looks, ggplot2 for publication graphics, plotly for interactivity
+2. **Handle large datasets strategically**: Use sampling, binning, and aggregation to manage performance
+3. **Consider your audience**: Static plots for reports, interactive plots for exploration
+4. **Optimize for performance**: Monitor memory usage and rendering times
+5. **Iterate and refine**: Start simple, then add complexity as needed
+
+## Next Steps
+
+1. Practice with your own datasets
+2. Explore advanced ggplot2 extensions (ggrepel, gganimate, ggforce)
+3. Learn to create dashboards with shiny + plotly
+4. Study color theory and accessibility for better visualizations
+5. Join the ggplot2 and plotly communities for ongoing learning
+
+# Additional Resources
+
+- **ggplot2 Documentation**: https://ggplot2.tidyverse.org/
+- **plotly R Documentation**: https://plotly.com/r/
+- **R Graph Gallery**: https://www.r-graph-gallery.com/
+- **Data Visualization with R**: https://rkabacoff.github.io/datavis/
+- **Fundamentals of Data Visualization**: https://clauswilke.com/dataviz/
+
+
+---
+
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**

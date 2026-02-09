@@ -1,0 +1,982 @@
+---
+title: "Data Visualization Using R: Base R, ggplot2 & Plotly"
+author: "Somnath Chaudhuri, University of Southampton, UK"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+    code_download: true
+  pdf_document:
+    toc: true
+    toc_depth: 3
+geometry: margin=1in
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+# Setup chunk - runs once at the beginning
+# This configures knitr options and loads required packages
+knitr::opts_chunk$set(
+  echo = TRUE,          # Show code in output
+  warning = FALSE,      # Hide warning messages
+  message = FALSE,      # Hide package loading messages
+  fig.width = 10,       # Figure width in inches
+  fig.height = 6,       # Figure height in inches
+  fig.align = 'center', # Center align figures
+  out.width = "90%",    # Output width (90% of container)
+  cache = FALSE         # Disable caching for reliability
+)
+
+# Load required packages
+# Install packages first if needed: install.packages(c("ggplot2", "plotly", "DT", "RColorBrewer"))
+library(ggplot2)        # Advanced plotting system
+library(plotly)         # Interactive plots
+library(DT)             # Interactive data tables
+library(RColorBrewer)   # Color palettes
+
+# Set global plotting parameters for Base R
+par(mar = c(5, 4, 4, 2) + 0.1)  # Set margins: bottom, left, top, right
+```
+
+# Data Visualization Tutorial in R
+
+## Welcome to the Big Data Analysis and Management Training Program
+
+Welcome to the second section of our comprehensive training program! This section provides a comprehensive guide to data visualization in R using three approaches:
+
+1. **Base R Graphics** - Quick exploratory plots
+2. **ggplot2** - Publication-quality plots
+3. **Plotly** - Interactive web-based plots
+
+Each section progresses from simple to complex examples with detailed explanations of function arguments.
+
+---
+
+# Section 1: BASE R GRAPHICS
+
+## 1.1 Basic Plot Function
+
+```{r base-plot-intro}
+# Load built-in dataset
+data(mtcars)
+
+# Display dataset information
+cat(
+  "Dataset: mtcars (Motor Trend Car Road Tests)\n",
+  "Rows:", nrow(mtcars), "| Columns:", ncol(mtcars), "\n\n",
+  "First 6 rows:\n",
+  sep = ""
+)
+print(head(mtcars))
+```
+
+## 1.2 Simple Black & White Scatter Plot
+
+```{r base-scatter-bw, fig.height=5}
+# Basic scatter plot with minimal arguments
+plot(mtcars$wt,           # x variable: car weight
+     mtcars$mpg,          # y variable: miles per gallon
+     main = "Weight vs MPG",  # main: plot title
+     xlab = "Weight (1000 lbs)",  # xlab: x-axis label
+     ylab = "Miles per Gallon",   # ylab: y-axis label
+     pch = 16,            # pch: point character (16 = filled circle)
+     col = "black",       # col: point color
+     cex = 1.0,           # cex: character expansion (point size)
+     frame = FALSE)       # frame: remove box around plot
+```
+
+## 1.3 Adding Color and Customization
+
+```{r base-scatter-color, fig.height=5}
+# Create color vector based on number of cylinders
+colors <- ifelse(mtcars$cyl == 4, "red",
+                ifelse(mtcars$cyl == 6, "green", "blue"))
+
+# Enhanced scatter plot with colors and sizes
+plot(mtcars$wt, mtcars$mpg,
+     main = "Weight vs MPG (Colored by Cylinders)",
+     xlab = "Weight (1000 lbs)",
+     ylab = "Miles per Gallon",
+     pch = ifelse(mtcars$cyl == 4, 16,      # Different shapes for different cylinders
+                  ifelse(mtcars$cyl == 6, 17, 18)),
+     col = colors,        # Use custom color vector
+     cex = ifelse(mtcars$cyl == 4, 1.0,     # Different sizes based on cylinders
+                  ifelse(mtcars$cyl == 6, 1.3, 1.6)),
+     frame = FALSE,
+     lwd = 1.5)           # lwd: line width for point borders
+
+# Add legend
+legend("topright",                     # Position: top right corner
+       legend = c("4 Cylinders", "6 Cylinders", "8 Cylinders"),  # Text labels
+       col = c("red", "green", "blue"), # Colors
+       pch = c(16, 17, 18),            # Point characters
+       pt.cex = c(1.0, 1.3, 1.6),      # Point sizes
+       title = "Cylinders",            # Legend title
+       bty = "n")                      # bty: box type ("n" = no box)
+```
+
+## 1.4 Adding Regression Line and Grid
+
+```{r base-scatter-enhanced, fig.height=5}
+# Plot with regression line and grid
+plot(mtcars$wt, mtcars$mpg,
+     main = "Weight vs MPG with Regression Line",
+     xlab = "Weight (1000 lbs)",
+     ylab = "Miles per Gallon",
+     pch = 16,
+     col = rgb(0.2, 0.4, 0.8, 0.7),  # RGB colors with transparency (alpha = 0.7)
+     cex = 1.2,
+     frame = FALSE)
+
+# Add grid lines
+grid(col = "gray",        # Grid color
+     lty = "dotted",      # lty: line type ("dotted", "dashed", "solid")
+     lwd = 0.5)           # lwd: line width
+
+# Add regression line using abline()
+abline(lm(mpg ~ wt, data = mtcars),  # Linear model
+       col = "red",                   # Line color
+       lwd = 2,                       # Line width
+       lty = "dashed")                # Line type: dashed
+
+# Add text annotation
+text(x = 4.5, y = 30,                # x, y: coordinates for text
+     labels = "Negative Correlation", # Text to display
+     col = "darkred",                 # Text color
+     cex = 1.1)                       # Text size
+```
+
+## 1.5 Using par() for Multiple Plots
+
+```{r par-multiple, fig.height=8}
+# Save current par settings
+old_par <- par()
+
+# Set up 2x2 plot grid
+par(mfrow = c(2, 2),        # mfrow: matrix of plots (rows, columns)
+    mar = c(4, 4, 3, 1),    # mar: margins (bottom, left, top, right)
+    oma = c(2, 2, 2, 0))    # oma: outer margins
+
+# Plot 1: Basic scatter
+plot(mtcars$wt, mtcars$mpg,
+     main = "Basic Scatter",
+     xlab = "Weight",
+     ylab = "MPG",
+     pch = 16,
+     col = "steelblue")
+
+# Plot 2: With regression line
+plot(mtcars$wt, mtcars$mpg,
+     main = "With Regression",
+     xlab = "Weight",
+     ylab = "MPG",
+     pch = 16,
+     col = "forestgreen")
+abline(lm(mpg ~ wt, data = mtcars), col = "red", lwd = 2)
+
+# Plot 3: Color by cylinders
+colors <- c("red", "green", "blue")[as.factor(mtcars$cyl)]
+plot(mtcars$wt, mtcars$mpg,
+     main = "By Cylinders",
+     xlab = "Weight",
+     ylab = "MPG",
+     pch = 16,
+     col = colors)
+
+# Plot 4: With smooth curve
+plot(mtcars$wt, mtcars$mpg,
+     main = "With Smooth Curve",
+     xlab = "Weight",
+     ylab = "MPG",
+     pch = 16,
+     col = "purple")
+lines(lowess(mtcars$wt, mtcars$mpg),  # LOWESS smoother
+      col = "orange",
+      lwd = 2)
+
+# Add overall title
+mtext("Multiple Views of Weight vs MPG",  # Text to display
+      side = 3,                           # side: 3 = top
+      outer = TRUE,                       # Place in outer margin
+      cex = 1.5,                          # Text size
+      font = 2)                           # Font: 2 = bold
+
+# Reset to original par settings
+par(old_par)
+```
+
+## 1.6 Histograms with Base R
+
+```{r base-histogram, fig.height=6}
+# Load faithful dataset
+data(faithful)
+
+# Display dataset info
+cat("Dataset: faithful (Old Faithful Geyser)\n")
+cat("Rows:", nrow(faithful), "\n\n")
+
+print(head(faithful))
+
+# Set up 1x2 plot layout
+par(mfrow = c(1, 2))
+
+# Basic histogram
+hist(faithful$waiting,          # Data vector
+     main = "Basic Histogram",  # Title
+     xlab = "Waiting Time (min)", # x-axis label
+     ylab = "Frequency",        # y-axis label
+     col = "lightblue",         # Fill color
+     border = "white",          # Border color
+     breaks = 15,               # Number of bins
+     freq = TRUE)               # freq: TRUE for frequency, FALSE for density
+
+# Histogram with density curve
+hist(faithful$waiting,
+     main = "With Density Curve",
+     xlab = "Waiting Time (min)",
+     ylab = "Density",
+     col = rgb(0.8, 0.9, 1, 0.6),  # Light blue with transparency
+     border = "navy",
+     freq = FALSE,                  # Plot density instead of frequency
+     breaks = 20)
+
+# Add density curve
+lines(density(faithful$waiting),  # Density estimation
+      col = "darkred",            # Line color
+      lwd = 2)                    # Line width
+
+# Add rug plot (shows individual data points)
+rug(faithful$waiting,             # Data points
+    side = 1,                     # side: 1 = bottom
+    col = "red",                  # Color
+    lwd = 0.5)                    # Line width
+
+# Reset layout
+par(mfrow = c(1, 1))
+```
+
+## 1.7 Box Plots
+
+```{r base-boxplot, fig.height=6}
+# Load ToothGrowth dataset
+data(ToothGrowth)
+
+# Display dataset info
+cat("Dataset: ToothGrowth\n")
+cat("Rows:", nrow(ToothGrowth), "\n")
+print(head(ToothGrowth))
+
+# Create box plot
+boxplot(len ~ supp,            # Formula: length by supplement type
+        data = ToothGrowth,    # Data source
+        main = "Tooth Growth by Supplement",  # Title
+        xlab = "Supplement Type",             # x-axis label
+        ylab = "Tooth Length",                # y-axis label
+        col = c("lightblue", "lightgreen"),   # Colors for groups
+        border = "darkblue",                  # Box border color
+        notch = TRUE,                         # notch: add notches for median comparison
+        outpch = 16,                          # outpch: outlier point character
+        outcol = "red",                       # outcol: outlier color
+        outcex = 1.2)                         # outcex: outlier size
+
+# Add points for individual data
+stripchart(len ~ supp,          # Formula
+           data = ToothGrowth,  # Data
+           vertical = TRUE,     # vertical: TRUE for vertical orientation
+           method = "jitter",   # method: "jitter" to spread points
+           pch = 16,            # Point character
+           col = rgb(0, 0, 0, 0.3),  # Semi-transparent black
+           cex = 0.8,           # Point size
+           add = TRUE)          # add: add to existing plot
+```
+
+## 1.8 Time Series Plot
+
+```{r base-timeseries, fig.height=5}
+# Load AirPassengers dataset
+data(AirPassengers)
+
+# Display dataset info
+cat("Dataset: AirPassengers (Monthly totals 1949-1960)\n")
+print(str(AirPassengers))
+print(head(AirPassengers))
+
+
+# Basic time series plot
+plot(AirPassengers,             # Time series object
+     main = "Airline Passengers Over Time",  # Title
+     xlab = "Year",                         # x-axis label
+     ylab = "Passengers (thousands)",       # y-axis label
+     type = "l",                # type: "l" = line plot
+     col = "blue",              # Line color
+     lwd = 2,                   # Line width
+     las = 1)                   # las: axis label style (1 = horizontal)
+
+# Add seasonal decomposition lines
+decomp <- decompose(AirPassengers)
+lines(decomp$trend,             # Trend component
+      col = "red",              # Color
+      lwd = 2,                  # Line width
+      lty = "dashed")           # Line type
+
+# Add legend
+legend("topleft",               # Position
+       legend = c("Original", "Trend"),  # Labels
+       col = c("blue", "red"),  # Colors
+       lwd = c(2, 2),           # Line widths
+       lty = c("solid", "dashed"),  # Line types
+       bty = "n")               # No box around legend
+```
+
+## 1.9 Base R Exercises
+
+```{r base-exercise-instructions, eval=FALSE}
+# EXERCISE 1: Create a scatter plot of Sepal.Length vs Sepal.Width from iris dataset
+# Requirements:
+# 1. Color points by Species
+# 2. Add a legend
+# 3. Add a title and axis labels
+# 4. Add a grid
+
+# EXERCISE 2: Create a histogram of Petal.Length from iris dataset
+# Requirements:
+# 1. Use different colors for each Species
+# 2. Add density curves
+# 3. Add appropriate title and labels
+
+# EXERCISE 3: Create a 2x2 plot matrix showing:
+# 1. Box plot of mpg by cylinder count
+# 2. Histogram of mpg
+# 3. Scatter plot of hp vs mpg
+# 4. Bar plot of cylinder counts
+```
+
+---
+
+# Section 2: GGPLOT2 VISUALIZATION
+```{r iris}
+print(str(iris))
+print(head(iris))
+```
+
+## 2.1 Introduction to ggplot2
+
+ggplot2 is based on the "Grammar of Graphics" - a systematic approach to building plots layer by layer.
+
+```{r ggplot-intro}
+# Basic ggplot2 syntax structure
+cat("ggplot2 Basic Syntax:\n",
+    "ggplot(data, aes(x, y)) +           # Initialize plot\n",
+    "  geom_layer() +                    # Add geometry\n",
+    "  scale_*() +                       # Customize scales\n",
+    "  theme_*() +                       # Apply theme\n",
+    "  labs()                            # Add labels\n",
+    sep = "")
+
+```
+
+## 2.2 Basic ggplot Scatter Plot
+
+```{r ggplot-scatter-basic, fig.height=5}
+# Load iris dataset
+data(iris)
+
+# Basic ggplot scatter plot
+ggplot(iris,                               # data: dataset
+       aes(x = Sepal.Length,               # aes: aesthetic mappings
+           y = Sepal.Width,                # x and y variables
+           color = Species)) +             # color: map Species to color
+  geom_point(size = 3,                     # geom_point: scatter plot layer
+             alpha = 0.7) +                # alpha: transparency (0-1)
+  labs(title = "Sepal Length vs Width",    # labs: labels and titles
+       subtitle = "Iris Dataset",
+       x = "Sepal Length (cm)",
+       y = "Sepal Width (cm)",
+       color = "Species") +                # Legend title
+  theme_minimal() +                        # theme: minimal theme
+  theme(plot.title = element_text(hjust = 0.5),    # Center title
+        plot.subtitle = element_text(hjust = 0.5)) # Center subtitle
+```
+
+## 2.3 ggplot with Multiple Geometries
+
+```{r ggplot-multiple-geoms, fig.height=5}
+# Plot with multiple geometry layers
+ggplot(iris, aes(x = Sepal.Length, y = Sepal.Width, color = Species)) +
+  geom_point(size = 3,                    # First layer: points
+             alpha = 0.6) +
+  geom_smooth(method = "lm",              # Second layer: linear regression
+              se = TRUE,                  # se: show confidence interval
+              formula = y ~ x,            # Formula for smoothing
+              alpha = 0.2) +              # Transparency for confidence band
+  geom_density_2d(alpha = 0.5,            # Third layer: 2D density contours
+                  color = "black") +
+  facet_wrap(~ Species,                   # facet_wrap: separate plots by Species
+             ncol = 3) +                  # ncol: number of columns
+  labs(title = "Sepal Dimensions with Regression",
+       x = "Sepal Length (cm)",
+       y = "Sepal Width (cm)") +
+  theme_bw() +                            # Black and white theme
+  theme(legend.position = "none")         # Hide legend (redundant with facets)
+```
+
+## 2.4 Histograms and Density Plots with ggplot
+
+```{r ggplot-hist-density, fig.height=6}
+# Create comparison plot
+p1 <- ggplot(faithful, aes(x = waiting)) +
+  geom_histogram(binwidth = 5,            # binwidth: width of bins
+                 fill = "lightblue",      # fill: interior color
+                 color = "black",         # color: border color
+                 alpha = 0.7) +           # alpha: transparency
+  labs(title = "Histogram", 
+       x = "Waiting Time (min)", 
+       y = "Count") +
+  theme_minimal()
+
+p2 <- ggplot(faithful, aes(x = waiting)) +
+  geom_density(fill = "lightgreen",       # Density plot fill
+               alpha = 0.5, 
+               color = "darkgreen") +
+  labs(title = "Density Plot",
+       x = "Waiting Time (min)", 
+       y = "Density") +
+  theme_minimal()
+
+p3 <- ggplot(faithful, aes(x = waiting)) +
+  geom_histogram(aes(y = ..density..),    # ..density..: use density instead of count
+                 binwidth = 5,
+                 fill = "lightcoral",
+                 alpha = 0.5) +
+  geom_density(color = "darkred", 
+               size = 1) +                # size: line thickness
+  labs(title = "Histogram + Density",
+       x = "Waiting Time (min)", 
+       y = "Density") +
+  theme_minimal()
+
+# Arrange plots using patchwork (install if needed: install.packages("patchwork"))
+if(require(patchwork)) {
+  p1 + p2 + p3 + plot_layout(ncol = 3)
+} else {
+  print(p1)
+  print(p2)
+  print(p3)
+}
+```
+
+## 2.5 Box Plots and Violin Plots
+
+```{r ggplot-box-violin, fig.height=6}
+# Create ToothGrowth plot
+ggplot(ToothGrowth, 
+       aes(x = factor(dose),          # factor(): treat dose as categorical
+           y = len, 
+           fill = factor(dose))) +    # fill: map dose to fill color
+  geom_violin(alpha = 0.6,            # Violin plot
+              trim = FALSE) +         # trim: don't trim tails
+  geom_boxplot(width = 0.2,           # Box plot inside violin
+               alpha = 0.8) +    
+  geom_jitter(width = 0.1,            # Jittered points
+              size = 1.5, 
+              alpha = 0.5) +
+  labs(title = "Tooth Growth by Dose",
+       subtitle = "Violin + Box + Jitter Plot",
+       x = "Dose (mg/day)",
+       y = "Tooth Length",
+       fill = "Dose") +
+  scale_fill_brewer(palette = "Set2") +  # ColorBrewer palette
+  theme_classic()                      # Classic theme
+```
+
+## 2.6 Bar Plots
+
+```{r ggplot-bar, fig.height=5}
+# Prepare Titanic data
+titanic_df <- as.data.frame(Titanic)
+print(head(titanic_df))
+
+# Bar plot
+ggplot(titanic_df, 
+       aes(x = Class,                  # x: categorical variable
+           y = Freq,                   # y: frequency
+           fill = Survived)) +         # fill: color by survival
+  geom_bar(stat = "identity",          # stat: use actual y values
+           position = "dodge",         # position: bars side by side
+           width = 0.7) +              # width: bar width (0-1)
+  
+  labs(title = "Titanic Survival by Class",
+       x = "Passenger Class",
+       y = "Count",
+       fill = "Survived") +
+  scale_fill_manual(values = c("Yes" = "#4daf4a", "No" = "#e41a1c")) +  # Custom colors
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x labels
+```
+
+## 2.7 Heatmaps
+
+```{r ggplot-heatmap_data, fig.height=6}
+# Prepare volcano data
+print(head(volcano))
+volcano_long <- reshape2::melt(volcano)
+print(head(volcano_long))
+```
+```{r colors, fig.height=6, results='hide'}
+# Colors in R
+par(mfrow=c(1,5)); z <- matrix(volcano, nrow(volcano)); 
+lapply(list(terrain.colors, 
+            topo.colors, 
+            heat.colors, 
+            cm.colors, 
+            rainbow), \(f) image(z, col=f(100), axes=FALSE))
+
+```
+```{r ggplot-heatmap, fig.height=6}
+# Heatmap with ggplot
+ggplot(volcano_long, 
+       aes(x = Var1,                   # x coordinate
+           y = Var2,                   # y coordinate
+           fill = value)) +            # fill: color by value
+  geom_tile() +                        # geom_tile: creates heatmap
+  scale_fill_gradientn(colors = terrain.colors(10),  # Color gradient
+                       name = "Height") +            # Legend title
+  labs(title = "Volcano Topography Heatmap",
+       x = "X Coordinate",
+       y = "Y Coordinate") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())  # Remove grid lines
+```
+
+## 2.8 Custom Themes and Saving Plots
+
+```{r ggplot-custom-theme, fig.height=5}
+# Create custom plot
+custom_plot <- ggplot(iris, aes(x = Species, y = Sepal.Length, fill = Species)) +
+  geom_boxplot(alpha = 0.8,
+               outlier.color = "red",
+               outlier.size = 2) +
+  geom_jitter(width = 0.2, 
+              size = 1.5, 
+              alpha = 0.4) +
+  labs(title = "Sepal Length by Species",
+       subtitle = "Iris Dataset Analysis",
+       x = "Species",
+       y = "Sepal Length (cm)",
+       caption = "Source: Fisher's Iris Dataset") +
+  scale_fill_brewer(palette = "Set3") +
+  
+  # Custom theme
+  theme(
+    plot.title = element_text(size = 16,           # Title size
+                              face = "bold",       # Font face
+                              hjust = 0.5),       # Horizontal justification
+    plot.subtitle = element_text(size = 12,
+                                 hjust = 0.5),
+    axis.title = element_text(size = 12,           # Axis title size
+                              face = "bold"),
+    axis.text = element_text(size = 10),          # Axis text size
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom",                   # Legend position
+    panel.background = element_rect(fill = "white"),  # Panel background
+    panel.grid.major = element_line(color = "gray90",  # Major grid lines
+                                    size = 0.5),
+    panel.grid.minor = element_blank(),           # Remove minor grid
+    plot.background = element_rect(fill = "white",  # Plot background
+                                   color = "black",
+                                   size = 1)
+  )
+
+print(custom_plot)
+
+# Save plot
+ggsave("figures/custom_ggplot.png",        # filename
+       plot = custom_plot,                 # plot to save
+       width = 10,                         # width in inches
+       height = 6,                         # height in inches
+       dpi = 300)                          # resolution
+```
+
+## 2.9 ggplot2 Exercises
+
+```{r ggplot-exercises, eval=FALSE}
+# EXERCISE 4: Create a ggplot of mtcars showing:
+# 1. Scatter plot of mpg vs hp
+# 2. Color points by transmission type (am)
+# 3. Add smooth trend line
+# 4. Facet by number of cylinders
+# 5. Apply theme_classic()
+
+# EXERCISE 5: Create a bar plot of diamond counts by cut
+# 1. Use diamonds dataset (ggplot2::diamonds)
+# 2. Fill bars by color
+# 3. Use position = "fill" for proportions
+# 4. Add percentage labels
+
+# EXERCISE 6: Create a line plot of economics dataset
+# 1. Plot unemployment rate over time
+# 2. Add vertical line for significant events
+# 3. Add shaded region for recession periods
+# 4. Use scale_x_date() for proper date formatting
+```
+
+---
+
+# Section 3: PLOTLY INTERACTIVE VISUALIZATION
+
+## 3.1 Introduction to Plotly
+
+```{r plotly-intro}
+# Basic plotly syntax
+cat(
+  "plotly Basic Syntax:\n",
+  "plot_ly(data, x = ~var1, y = ~var2, type = 'scatter', mode = 'markers')\n",
+  "\nCommon type values:\n",
+  "- 'scatter': scatter/line plots\n",
+  "- 'bar': bar charts\n",
+  "- 'histogram': histograms\n",
+  "- 'box': box plots\n",
+  "- 'heatmap': heatmaps\n",
+  sep = ""
+)
+
+```
+
+## 3.2 Basic Interactive Scatter Plot
+
+```{r plotly-basic, fig.height=5}
+# Basic interactive scatter plot
+p <- plot_ly(mtcars,                      # data: dataset
+             x = ~wt,                     # x: weight (~ means formula)
+             y = ~mpg,                    # y: mpg
+             type = 'scatter',            # type: plot type
+             mode = 'markers',            # mode: display mode
+             marker = list(size = 10,     # marker: point properties
+                           color = 'rgba(30, 120, 180, 0.8)',  # RGBA color
+                           line = list(color = 'rgb(0,0,0)',   # Border color
+                                       width = 1)),            # Border width
+             text = ~paste('Car:', rownames(mtcars),  # text: hover text
+                           '<br>MPG:', mpg,
+                           '<br>Weight:', wt),
+             hoverinfo = 'text') %>%      # hoverinfo: what to show on hover
+  layout(title = 'Interactive Scatter Plot',  # layout: plot layout
+         xaxis = list(title = 'Weight (1000 lbs)'),  # xaxis properties
+         yaxis = list(title = 'Miles per Gallon'),   # yaxis properties
+         hovermode = 'closest')           # hovermode: how hover works
+
+p
+```
+
+## 3.3 Colored Scatter with Legend
+
+```{r plotly-colored, fig.height=5}
+# Colored scatter plot with groups
+p <- plot_ly(mtcars,
+             x = ~wt,
+             y = ~mpg,
+             color = ~factor(cyl),        # color: map to color scale
+             colors = c('#e41a1c', '#377eb8', '#4daf4a'),  # Custom colors
+             type = 'scatter',
+             mode = 'markers',
+             size = ~hp,                  # size: map to point size
+             sizes = c(5, 20),            # sizes: min and max size
+             marker = list(opacity = 0.7, # opacity: transparency
+                           sizemode = 'diameter'),  # sizemode: how to interpret size
+             text = ~paste('Car:', rownames(mtcars),
+                           '<br>Cylinders:', cyl,
+                           '<br>HP:', hp),
+             hoverinfo = 'text') %>%
+  layout(title = 'Weight vs MPG (Interactive)',
+         xaxis = list(title = 'Weight'),
+         yaxis = list(title = 'MPG'),
+         legend = list(title = list(text = 'Cylinders')),  # Legend title
+         hovermode = 'closest')
+
+p
+```
+
+## 3.4 3D Scatter Plot
+
+```{r plotly-3d, fig.height=6}
+# Interactive 3D scatter plot
+p <- plot_ly(mtcars,
+             x = ~wt,
+             y = ~mpg,
+             z = ~hp,                     # z: third dimension
+             color = ~factor(cyl),
+             colors = c('#ff7f00', '#984ea3', '#ffff33'),
+             type = 'scatter3d',          # type: 3D scatter
+             mode = 'markers',
+             marker = list(size = 5,
+                           opacity = 0.8),
+             text = ~rownames(mtcars)) %>%
+  layout(title = '3D Scatter Plot',
+         scene = list(                    # scene: 3D scene properties
+           xaxis = list(title = 'Weight'),
+           yaxis = list(title = 'MPG'),
+           zaxis = list(title = 'Horsepower'),
+           camera = list(                 # camera: viewing angle
+             eye = list(x = 1.5, y = 1.5, z = 1.5)  # eye position
+           )
+         ))
+
+p
+```
+
+## 3.5 Interactive Time Series
+
+```{r plotly-timeseries, fig.height=5}
+# Create time series data
+dates <- seq.Date(from = as.Date('2020-01-01'), 
+                  by = 'month', 
+                  length.out = 24)
+sales <- cumsum(rnorm(24, mean = 100, sd = 20))
+
+# Interactive line plot
+p <- plot_ly(x = dates,                   # x: dates
+             y = sales,                    # y: sales
+             type = 'scatter',
+             mode = 'lines+markers',      # mode: lines and markers
+             line = list(color = 'rgb(31, 119, 180)',  # line properties
+                         width = 2,
+                         dash = 'solid'),
+             marker = list(size = 8,
+                           color = 'rgb(255, 127, 14)'),
+             name = 'Sales') %>%          # name: trace name
+  layout(title = 'Sales Over Time',
+         xaxis = list(title = 'Date',
+                      type = 'date',      # type: date axis
+                      tickformat = '%b %Y'),  # Date format
+         yaxis = list(title = 'Sales ($)'),
+         hovermode = 'x unified')         # Show all y values at x position
+
+p
+```
+
+## 3.6 Interactive Bar Plot
+
+```{r plotly-bar-interactive, fig.height=5}
+# Prepare Titanic data for plotly
+titanic_summary <- aggregate(Freq ~ Class + Survived, 
+                            data = titanic_df, 
+                            sum)
+
+# Interactive bar plot
+p <- plot_ly(titanic_summary,
+             x = ~Class,
+             y = ~Freq,
+             color = ~Survived,
+             colors = c('#d7191c', '#2c7bb6'),
+             type = 'bar',
+             text = ~Freq,
+             textposition = 'auto',       # textposition: auto position text
+             hovertext = ~paste('Class:', Class,  # hovertext: custom hover
+                               '<br>Survived:', Survived,
+                               '<br>Count:', Freq),
+             hoverinfo = 'text') %>%
+  layout(title = 'Titanic Survival by Class',
+         xaxis = list(title = 'Passenger Class'),
+         yaxis = list(title = 'Count'),
+         barmode = 'group',               # barmode: grouped bars
+         bargap = 0.15,                   # bargap: gap between bars
+         bargroupgap = 0.1,               # bargroupgap: gap between groups
+         hoverlabel = list(namelength = -1))  # Show full hover label
+
+p
+```
+
+## 3.7 Interactive Histogram
+
+```{r plotly-histogram-interactive, fig.height=5}
+# Interactive histogram
+p <- plot_ly(x = faithful$waiting,
+             type = 'histogram',
+             nbinsx = 20,                 # nbinsx: number of bins
+             marker = list(color = 'rgb(158,202,225)',  # Bar color
+                           line = list(color = 'rgb(8,48,107)',  # Border color
+                                       width = 1.5)),
+             opacity = 0.7,               # opacity: transparency
+             name = 'Waiting Time') %>%   # name: legend name
+  layout(title = 'Waiting Time Distribution',
+         xaxis = list(title = 'Waiting Time (minutes)',
+                      range = c(40, 100)),  # range: axis range
+         yaxis = list(title = 'Count'),
+         bargap = 0.05,                   # bargap: gap between bars
+         hovermode = 'x')                 # Show histogram bin info
+
+p
+```
+
+## 3.8 Plotly Exercises
+
+```{r plotly-exercises, eval=FALSE}
+# EXERCISE 7: Create an interactive plot of quakes dataset
+# 1. 2D scatter of lat vs long
+# 2. Color by depth
+# 3. Size by magnitude
+# 4. Add hover information with all variables
+
+# EXERCISE 8: Create interactive volcano surface plot
+# 1. Use plot_ly type = "surface"
+# 2. Add contours
+# 3. Customize colorscale
+# 4. Add lighting effects
+
+# EXERCISE 9: Create dashboard with subplots
+# 1. Combine scatter, histogram, and box plot
+# 2. Link selections between plots
+# 3. Add dropdown menus for variable selection
+```
+
+---
+
+# Section 4: BEST PRACTICES AND COMPARISON
+
+## 4.1 When to Use Each Tool
+
+```{r comparison-table}
+# Create comparison data frame
+comparison <- data.frame(
+  Feature = c("Learning Curve", "Customization", "Interactivity", 
+              "Publication Quality", "Speed", "Ease of Use"),
+  Base_R = c("Easy", "Basic", "None", "Basic", "Fast", "Very Easy"),
+  ggplot2 = c("Moderate", "Excellent", "Limited", "Excellent", "Moderate", "Moderate"),
+  Plotly = c("Steep", "Good", "Excellent", "Good", "Slow", "Complex")
+)
+
+# Display as interactive table
+DT::datatable(comparison,
+              options = list(pageLength = 6, 
+                             dom = 't'),
+              rownames = FALSE) %>%
+  DT::formatStyle(columns = 1:4, 
+                  fontSize = '12px')
+```
+
+## 4.2 Color Palette Best Practices
+
+```{r color-palettes, fig.height=4}
+# Show different color palettes
+par(mfrow = c(1, 3), mar = c(2, 2, 2, 1))
+
+# Sequential palette (for ordered data)
+image(volcano[1:10, 1:10], 
+      col = brewer.pal(9, "Blues"),
+      main = "Sequential (Blues)")
+
+# Diverging palette (for data with midpoint)
+image(volcano[1:10, 1:10] - mean(volcano[1:10, 1:10]), 
+      col = brewer.pal(11, "RdBu"),
+      main = "Diverging (RdBu)")
+
+# Qualitative palette (for categorical data)
+barplot(rep(1, 8), 
+        col = brewer.pal(8, "Set3"),
+        main = "Qualitative (Set3)",
+        border = NA)
+
+par(mfrow = c(1, 1))
+```
+
+## 4.3 Exporting Plots
+
+```{r export-examples, eval=FALSE}
+# Export Base R plot
+png("figures/base_scatter.png",    # filename
+    width = 2000,                  # width in pixels
+    height = 1500,                 # height in pixels
+    res = 300)                     # resolution (DPI)
+plot(mtcars$wt, mtcars$mpg,
+     main = "Exported Plot",
+     xlab = "Weight",
+     ylab = "MPG")
+dev.off()
+
+# Export ggplot
+ggsave("figures/ggplot_export.png",
+       plot = custom_plot,
+       width = 10,     # inches
+       height = 6,     # inches
+       dpi = 300)
+
+# Export plotly (as HTML)
+htmlwidgets::saveWidget(p, "figures/plotly_export.html")
+```
+
+## 4.4 Performance Tips
+
+```{r performance-tips}
+cat("Performance Optimization Tips:\n\n",
+    "• For large datasets (>10k points):\n",
+    "  - Use hexbin plots or 2D density\n",
+    "  - Sample data for initial exploration\n",
+    "  - Consider data aggregation\n\n",
+    "• Memory management:\n",
+    "  - Remove unused objects: rm(object)\n",
+    "  - Clear plots: dev.off()\n",
+    "  - Run garbage collection: gc()\n\n",
+    "• Plotting speed:\n",
+    "  - Base R: fastest for simple plots\n",
+    "  - ggplot2: slower, more features\n",
+    "  - Plotly: slowest, but interactive\n"
+)
+
+```
+
+---
+
+# FINAL PROJECT
+
+```{r final-project-instructions, eval=FALSE}
+# FINAL PROJECT: Create a Visualization Dashboard
+# 
+# Choose any dataset (suggestions: gapminder, diamonds, economics)
+# 
+# Requirements:
+# 1. Create at least 3 different plot types
+# 2. Use all three plotting systems (Base R, ggplot2, Plotly)
+# 3. Include:
+#    - Proper labels and titles
+#    - Legends where appropriate
+#    - Color schemes
+#    - Theme customization
+# 
+# 4. Export all plots
+# 5. Write brief analysis of findings
+# 
+# Example workflow:
+# 1. Load and explore data
+# 2. Create Base R plots for quick exploration
+# 3. Create ggplot2 plots for publication
+# 4. Create Plotly plots for interactivity
+# 5. Compare insights from different visualizations
+```
+
+---
+
+# SUMMARY
+
+## Key Takeaways
+
+1. **Base R** is best for quick exploratory analysis and simple plots
+2. **ggplot2** excels at creating publication-quality, complex visualizations
+3. **Plotly** is ideal for interactive, web-based dashboards
+4. Always consider your audience and purpose when choosing a plotting method
+5. Good visualizations tell a story - use titles, labels, and annotations effectively
+
+
+## Additional Resources
+
+- **R Graph Gallery**: https://r-graph-gallery.com/
+- **ggplot2 Documentation**: https://ggplot2.tidyverse.org/
+- **Plotly R Documentation**: https://plotly.com/r/
+- **ColorBrewer**: https://colorbrewer2.org/
+- **Data Visualization Checklist**: https://stephanieevergreen.com/av-checklist/
+
+---
+**This material is part of the training program by The National Centre for Research Methods © [NCRM](https://www.ncrm.ac.uk/about/) authored by [Dr Somnath Chaudhuri](https://www.southampton.ac.uk/people/65ctq8/doctor-somnath-chaudhuri) (University of Southampton). Content is under a CC BY‑style permissive license and can be freely used for educational purposes with proper attribution.**
