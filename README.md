@@ -1,6 +1,5 @@
 # Introduction to Big Data Analysis and Management Using R
 
-# Introduction to Big Data Analysis and Management Using R
 
 **Author:** Somnath Chaudhuri  
 **Organization:** National Centre for Research Methods, University of Southampton, UK  
