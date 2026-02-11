@@ -4,7 +4,7 @@
 # List of packages
 packages <- c( "devtools", "remotes",
                "DT", "readr", "parallel",
-              "arrow", "plotly", 
+              "arrow", "plotly", "lubridate",
               "sf", "leaflet",
               "viridis", "rnaturalearth",
               "rnaturalearthdata", "shiny")
